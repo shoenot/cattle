@@ -2,6 +2,8 @@ use std::process::Command;
 use std::path::PathBuf;
 use std::error::Error;
 use std::fmt;
+use std::fs::read_to_string;
+use crate::lexer::Tokenizer;
 
 #[derive(Debug)]
 pub enum DriverError {
@@ -19,6 +21,11 @@ impl fmt::Display for DriverError {
 }
 
 impl Error for DriverError {}
+
+fn load_source(input_file: PathBuf) -> Result<String, std::io::Error> {
+    let source = read_to_string(input_file)?;
+    Ok(source)
+}
 
 pub fn run_preprocessor(input_file: PathBuf) -> Result<(), DriverError> {
     let mut output_file = input_file.clone();
@@ -40,8 +47,16 @@ pub fn run_preprocessor(input_file: PathBuf) -> Result<(), DriverError> {
         }
 }
 
-pub fn run_compiler(input_file: PathBuf) -> Result<(), DriverError> {
-    todo!()
+pub fn run_compiler(args: crate::Args) -> Result<(), Box<dyn Error>> {
+    let source = load_source(args.input_file.clone())?;
+    let mut tokenizer = Tokenizer::new(source);
+    let tokens = tokenizer.tokenize();
+    println!("{:?}", tokens);
+    if args.lex {
+        return Ok(());
+    } else {
+        todo!()
+    }
 }
 
 pub fn run_assembler(input_file: PathBuf) -> Result<(), DriverError> {

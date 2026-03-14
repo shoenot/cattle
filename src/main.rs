@@ -20,7 +20,11 @@ struct Args {
 fn main() {
     let args = Args::parse();
     
-    if let Err(e) = run_preprocessor(args.input_file) {
-        println!("{}", e)
+    if let Err(e) = run_preprocessor(args.input_file.clone()) {
+        eprintln!("{}", e);
+    }
+
+    if let Err(e) = run_compiler(args) {
+        eprintln!("{}", e)
     }
 }

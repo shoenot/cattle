@@ -1,15 +1,33 @@
 use std::{
-    fs::read_to_string,
-    path::PathBuf
+    fs::read_to_string, iter::Peekable, path::PathBuf, vec::IntoIter, fmt,
 };
 
-struct Span {
-    line_number: usize,
-    start_char: usize,
-    end_char: usize,
+#[derive(Debug)]
+pub enum LexerError {
+    IntegerOverflow(Span),
+    InvalidCharacter(char, Span),
 }
 
-enum TokenType {
+impl fmt::Display for LexerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LexerError::IntegerOverflow(s) => write!(f, "Lexer Error: int overflow! \nLine: {}, Col: {}", s.line_number, s.start_idx),
+            LexerError::InvalidCharacter(c, s) => write!(f, "Lexer Error: invalid character! {}\nLine: {}, Col: {}", c, s.line_number, s.start_idx),
+        }
+    }
+}
+
+impl std::error::Error for LexerError {}
+
+#[derive(Debug)]
+pub struct Span {
+    pub line_number: usize,
+    pub start_idx: usize,
+    pub end_idx: usize,
+}
+
+#[derive(Debug)]
+pub enum TokenType {
     Identifier(String),
     OpenParen,
     CloseParen,
@@ -17,21 +35,139 @@ enum TokenType {
     CloseBrace,
     Semicolon,
     Constant(usize),
-    Keyword(String),
+    Int,
+    Void,
+    Return,
+}
+
+#[derive(Debug)]
+pub struct Token {
+    pub token_type: TokenType,
+    pub location: Span,
+}
+
+pub struct Tokenizer {
+    chars: Peekable<IntoIter<char>>,
+    start: usize,
+    current: usize,
+    len: usize,
+    line: usize
+}
+
+impl Tokenizer {
+    pub fn new(source: String) -> Tokenizer {
+        Tokenizer {
+            chars: source.chars().collect::<Vec<char>>().into_iter().peekable(),
+            start: 0,
+            current: 0,
+            len: source.len(),
+            line: 1,
+        }
+    }
+
+    fn advance(&mut self) -> char {
+        let char = self.chars.next().unwrap();
+        self.current += 1;
+        char
+    }
+
+    fn skip_whitespace(&mut self) {
+        while let Some(&c) = self.chars.peek() {
+            match c {
+                '\n' => {self.line += 1; self.chars.next(); self.current += 1},
+                ' ' | '\r' | '\t' => {self.chars.next(); self.current += 1},
+                _ => break,
+            }
+        }
+    }
+
+    fn at_end(&self) -> bool {
+        self.current >= self.len 
+    }
+
+    fn next_token(&mut self) -> Result<Option<Token>, LexerError> {
+        self.skip_whitespace();
+        self.start = self.current;
+        if self.at_end() {
+            return Ok(None);
+        }
+        
+        let c = self.advance();
+
+        let token_type = match c {
+            '(' => TokenType::OpenParen,
+            ')' => TokenType::CloseParen,
+            '{' => TokenType::OpenBrace,
+            '}' => TokenType::CloseBrace,
+            ';' => TokenType::Semicolon,
+            other => {
+                if other.is_digit(10) {
+                    self.scan_constant(other)
+                } else if other.is_ascii_alphabetic() || other == '_' {
+                    self.scan_text(other)
+                } else {
+                    return Err(LexerError::InvalidCharacter(
+                            other, 
+                            Span {
+                                line_number: self.line,
+                                start_idx: self.current,
+                                end_idx:self.current
+                            })
+                    )
+                }
+            }
+        };
+        Ok(Some(Token {
+            token_type,
+            location: Span {
+                line_number: self.line,
+                start_idx: self.start,
+                end_idx: self.current,
+            }
+        }))
+    }
+
+    fn peek(&mut self) -> char {
+            self.chars.peek().copied().unwrap_or('\0')
+    }
+
+    fn scan_constant(&mut self, first: char) -> TokenType {
+        let mut number = String::from(first);
+        while self.peek().is_digit(10) {
+            number.push(self.advance());
+        }
+        TokenType::Constant(number.parse().unwrap())
+    }
+
+    fn parse_keyword(&self, lexeme: &str) -> Option<TokenType> {
+        let token_type = match lexeme {
+            "return" => TokenType::Return,
+            "int" => TokenType::Int,
+            "void" => TokenType::Void,
+            _ => return None,
+        };
+
+        Some(token_type)
+    }
+
+    fn scan_text(&mut self, first: char) -> TokenType {
+        let mut word = String::from(first);
+        while self.peek().is_ascii_alphanumeric() {
+            word.push(self.advance());
+        }
+        match self.parse_keyword(&word) {
+            Some(tokentype) => tokentype,
+            None => TokenType::Identifier(word)
+        }
+    }
+
+    pub fn tokenize(&mut self) -> Result<Vec<Token>, LexerError> {
+        let mut tokens: Vec<Token> = Vec::new();
+        while let Some(token) = self.next_token()? {
+            tokens.push(token);
+        }
+        Ok(tokens)
+    }
 }
 
 
-struct Token {
-    token_type: TokenType,
-    location: Span,
-}
-
-
-fn load_source(input_file: PathBuf) -> Result<String, std::io::Error> {
-    let source = read_to_string(input_file)?;
-    Ok(source)
-}
-
-fn lex_file(source: String) -> Vec<TokenType> {
-
-}
