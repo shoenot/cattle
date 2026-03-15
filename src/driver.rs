@@ -53,20 +53,19 @@ pub fn run_preprocessor(input_file: PathBuf) -> Result<PathBuf, DriverError> {
 pub fn run_compiler(preprocessed: PathBuf, args: crate::Args) -> Result<(), Box<dyn Error>> {
     let source = load_source(preprocessed.clone())?;
     let mut tokenizer = Tokenizer::new(source);
-    let tokens = tokenizer.tokenize();
+    let tokens = tokenizer.tokenize()?;
     std::fs::remove_file(preprocessed).ok().unwrap();
     if args.lex {
-        println!("{:?}", tokens);
+        println!("{:#?}", tokens);
         return Ok(());
     } 
-        if args.parse {
-            let parser = Parser::new(tokens)?;
-            let program = parser.parse_program()?;
-            pretty_print(program);
-            return Ok(())
-        } else {
-            todo!();
-        }
+    let mut parser = Parser::new(tokens);
+    let program = parser.parse_program()?;
+    if args.parse {
+        pretty_print(program);
+        return Ok(())
+    } else {
+        todo!()
     }
 }
 

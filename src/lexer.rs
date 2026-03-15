@@ -74,7 +74,7 @@ impl Tokenizer {
     }
 
     fn advance(&mut self) -> char {
-        let char = self.chars.next().unwrap();
+        let char = self.chars.next().unwrap_or(' ');
         self.current += 1;
         char
     }
