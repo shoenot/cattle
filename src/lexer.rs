@@ -26,7 +26,15 @@ pub struct Span {
     pub end_idx: usize,
 }
 
-#[derive(Debug)]
+impl Copy for Span { }
+
+impl Clone for Span {
+    fn clone(&self) -> Span {
+        *self
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum TokenType {
     Identifier(String),
     OpenParen,
@@ -34,7 +42,7 @@ pub enum TokenType {
     OpenBrace,
     CloseBrace,
     Semicolon,
-    Constant(usize),
+    Constant(i32),
     Int,
     Void,
     Return,

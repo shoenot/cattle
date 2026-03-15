@@ -4,6 +4,9 @@ use std::error::Error;
 use std::fmt;
 use std::fs::read_to_string;
 use crate::lexer::Tokenizer;
+use crate::parser::{
+    Parser, pretty_print
+};
 
 #[derive(Debug)]
 pub enum DriverError {
@@ -51,13 +54,19 @@ pub fn run_compiler(preprocessed: PathBuf, args: crate::Args) -> Result<(), Box<
     let source = load_source(preprocessed.clone())?;
     let mut tokenizer = Tokenizer::new(source);
     let tokens = tokenizer.tokenize();
-    println!("{:?}", tokens);
+    std::fs::remove_file(preprocessed).ok().unwrap();
     if args.lex {
-        std::fs::remove_file(preprocessed).ok().unwrap();
+        println!("{:?}", tokens);
         return Ok(());
-    } else {
-        std::fs::remove_file(preprocessed).ok().unwrap();
-        todo!()
+    } 
+        if args.parse {
+            let parser = Parser::new(tokens)?;
+            let program = parser.parse_program()?;
+            pretty_print(program);
+            return Ok(())
+        } else {
+            todo!();
+        }
     }
 }
 

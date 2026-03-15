@@ -1,5 +1,6 @@
 mod driver;
 mod lexer;
+mod parser;
 use clap::Parser;
 use std::{path::PathBuf, process};
 use crate::driver::*;
