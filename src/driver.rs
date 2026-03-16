@@ -64,7 +64,7 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, Box<dyn Error>> {
     Ok(program)
 }
 
-fn run_poiser(program: Program) -> PoiseProg {
+fn run_poise(program: Program) -> PoiseProg {
     gen_poise(program)
 }
 
@@ -72,32 +72,12 @@ fn run_codegen(program: PoiseProg) -> AsmProgram {
     gen_program(program)
 }
 
-fn run_emitter(asm_program: AsmProgram, output_file: &PathBuf) -> Result<(), Box<dyn Error>> {
+fn run_emitter(asm_program: AsmProgram, output_file: &PathBuf) -> Result<PathBuf, Box<dyn Error>> {
     fs::write(&output_file, emit_program(asm_program)?)?;
-    Ok(())
+    Ok(output_file.to_path_buf())
 }
 
-pub fn run_assembler(input_file: &PathBuf) -> Result<(), DriverError> {
-    let mut output_file = input_file.clone();
-    output_file.set_extension("");
-    match Command::new("gcc")
-        .args([&input_file.to_str().unwrap(), "-o", &output_file.to_str().unwrap()])
-        .output() {
-            Ok(output) => {
-                if output.status.success() {
-                    let stdout_str = String::from_utf8_lossy(&output.stdout).into_owned();
-                    println!("{}", stdout_str);
-                    Ok(())
-                } else {
-                    let msg = String::from_utf8_lossy(&output.stderr).into_owned();
-                    Err(DriverError::AssemblerError(msg))
-                }
-            },
-            Err(e) => Err(DriverError::AssemblerError(e.to_string()))
-        }
-}
-
-pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<(), Box<dyn Error>> {
+pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<PathBuf, Box<dyn Error>> {
     let preprocessed = input_file.clone();
     let lexed = run_lexer(&preprocessed)?;
     std::fs::remove_file(preprocessed)?;
@@ -112,7 +92,7 @@ pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<(), Box<d
         std::process::exit(0);
     }
 
-    let poise = run_poiser(parsed);
+    let poise = run_poise(parsed);
     if args.tacky {
         println!("{:#?}", poise);
         std::process::exit(0);
@@ -125,7 +105,27 @@ pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<(), Box<d
     }
     
     let mut output_file = input_file.clone();
-    output_file.set_extension("");
+    output_file.set_extension("s");
     run_emitter(asm, &output_file)?;
-    Ok(())
+    Ok(output_file.to_path_buf())
 }
+pub fn run_assembler(input_file: &PathBuf) -> Result<PathBuf, DriverError> {
+    let mut output_file = input_file.clone();
+    output_file.set_extension("");
+    match Command::new("gcc")
+        .args([&input_file.to_str().unwrap(), "-o", &output_file.to_str().unwrap()])
+        .output() {
+            Ok(output) => {
+                if output.status.success() {
+                    let stdout_str = String::from_utf8_lossy(&output.stdout).into_owned();
+                    println!("{}", stdout_str);
+                    Ok(output_file.to_path_buf())
+                } else {
+                    let msg = String::from_utf8_lossy(&output.stderr).into_owned();
+                    Err(DriverError::AssemblerError(msg))
+                }
+            },
+            Err(e) => Err(DriverError::AssemblerError(e.to_string()))
+        }
+}
+

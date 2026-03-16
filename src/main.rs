@@ -35,12 +35,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     };
 
-    if let Err(e) = run_compiler(&preprocessed, args) {
-        eprintln!("{}", e);
-        return Err(e);
-    }
+    let compiled = match run_compiler(&preprocessed, args) {
+        Ok(pb) => pb,
+        Err(e) => {
+            eprintln!("{}", e);
+            process::exit(1)
+        },
+    };
 
-    match run_assembler(&input_file) {
+    match run_assembler(&compiled) {
         Ok(pb) => pb,
         Err(e) => {
             eprintln!("{}", e);

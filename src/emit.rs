@@ -44,7 +44,9 @@ fn emit_instruction(instruction: AsmInstruction, output: &mut String) -> Result<
             output.push_str(&format!("\tmovl\t{src},\t{dst}\n"));
         },
         AsmInstruction::Ret => {
-            output.push_str("\tret\n")
+            output.push_str("\tmovq\t%rbp,\t%rsp\n");
+            output.push_str("\tpopq\t%rbp\n");
+            output.push_str("\tret\n");
         },
         AsmInstruction::Unary(unary_op, operand) => {
             let dst = emit_operand(operand)?;
