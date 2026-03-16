@@ -3,6 +3,7 @@ mod lexer;
 mod parser;
 mod codegen;
 mod emit;
+mod poise;
 use clap::Parser;
 use std::{path::PathBuf, process};
 use crate::driver::*;
@@ -11,11 +12,13 @@ use crate::driver::*;
 struct Args {
     input_file: PathBuf,
     #[arg(short)]
-    S: bool,
+    s: bool,
     #[arg(long)]
     lex: bool,
     #[arg(long)]
-    parsed: bool,
+    parse: bool,
+    #[arg(long)]
+    tacky: bool,
     #[arg(long)]
     codegen: bool,
 }

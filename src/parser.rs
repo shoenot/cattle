@@ -9,7 +9,7 @@ pub enum ParseError {
     UnexpectedToken(TokenType, Span),
     UnexpectedEOF,
     ExpectedIdentifier(Span),
-    ExpectedConstant(Span),
+    ExpectedExpression(Span),
 }
 
 impl fmt::Display for ParseError {
@@ -18,7 +18,7 @@ impl fmt::Display for ParseError {
             ParseError::UnexpectedToken(t, s) => write!(f, "Parse Error: unexpected token! {:#?}\nLine: {}, Col: {}", t, s.line_number, s.start_idx),
             ParseError::UnexpectedEOF => write!(f, "Parse Error: unexpected EOF!"),
             ParseError::ExpectedIdentifier(s) => write!(f, "Parse Error: expected identifier!\nLine: {}, Col: {}", s.line_number, s.start_idx),
-            ParseError::ExpectedConstant(s) => write!(f, "Parse Error: expected constant!\nLine: {}, Col: {}", s.line_number, s.start_idx),
+            ParseError::ExpectedExpression(s) => write!(f, "Parse Error: expected expression!\nLine: {}, Col: {}", s.line_number, s.start_idx),
         }
     }
 }
@@ -44,6 +44,13 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i32),
+    Unary(UnaryOp, Box<Expression>)
+}
+
+#[derive(Debug)]
+pub enum UnaryOp {
+    Negate,
+    Complement,
 }
 
 #[derive(Debug)]
@@ -83,19 +90,15 @@ impl Parser {
         }
     }
 
+    fn peek(&mut self) -> Result<&Token, ParseError> {
+        self.tokens.peek().ok_or(ParseError::UnexpectedEOF)
+    }
+
     fn expect_ident(&mut self) -> Result<String, ParseError> {
         let token = self.advance()?;
         match token.token_type {
             TokenType::Identifier(name) => Ok(name),
             _ => Err(ParseError::ExpectedIdentifier(self.current_span))
-        }
-    }
-
-    fn expect_const(&mut self) -> Result<i32, ParseError> {
-        let token = self.advance()?;
-        match token.token_type {
-            TokenType::Constant(value) => Ok(value),
-            _ => Err(ParseError::ExpectedConstant(self.current_span))
         }
     }
 
@@ -106,7 +109,6 @@ impl Parser {
             Some(token) => Err(ParseError::UnexpectedToken(token.token_type.clone(), token.location)),
         }
     }
-        
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
         let function = self.parse_function()?;
@@ -138,8 +140,24 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
-        let constant = self.expect_const()?;
-        Ok(Expression::Constant(constant))
+        let token = self.advance()?;
+        match token.token_type {
+            TokenType::Constant(value) => Ok(Expression::Constant(value)),
+            TokenType::Tilde => {
+                let operand = self.parse_expression()?;
+                Ok(Expression::Unary(UnaryOp::Complement, Box::new(operand)))
+            },
+            TokenType::Minus => {
+                let operand = self.parse_expression()?;
+                Ok(Expression::Unary(UnaryOp::Negate, Box::new(operand)))
+            },
+            TokenType::OpenParen => {
+                let expression = self.parse_expression()?;
+                self.expect(TokenType::CloseParen)?;
+                Ok(expression)
+            },
+            _ => Err(ParseError::ExpectedExpression(self.current_span))
+        }
     }
 
 }

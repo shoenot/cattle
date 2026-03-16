@@ -34,6 +34,8 @@ pub enum TokenType {
     OpenBrace,
     CloseBrace,
     Semicolon,
+    Tilde,
+    Minus,
     Constant(i32),
     Int,
     Void,
@@ -100,6 +102,14 @@ impl Tokenizer {
             '{' => TokenType::OpenBrace,
             '}' => TokenType::CloseBrace,
             ';' => TokenType::Semicolon,
+            '~' => TokenType::Tilde,
+            '-' => {
+                if self.peek() != '-' {
+                    TokenType::Minus
+                } else {
+                    return Err(LexerError::InvalidCharacter(self.peek(), self.make_span()))
+                }
+            }
             other => {
                 if other.is_digit(10) {
                     self.scan_constant(other)?

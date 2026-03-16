@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::error::Error;
 use std::fs;
 use std::{fmt};
-use crate::codegen::gen_program;
-use crate::lexer::Tokenizer;
-use crate::parser::{Parser, pretty_print};
+use crate::codegen::{ProgramAsm, gen_program};
+use crate::lexer::{Token, Tokenizer};
+use crate::parser::{Parser, Program, pretty_print};
+use crate::poise::{PoiseProg, gen_poise};
 use crate::emit::emit_program;
 
 #[derive(Debug)]
@@ -50,32 +51,29 @@ pub fn run_preprocessor(input_file: &PathBuf) -> Result<PathBuf, DriverError> {
         }
 }
 
-pub fn run_compiler(preprocessed: &PathBuf, args: crate::Args) -> Result<(), Box<dyn Error>> {
+fn run_lexer(preprocessed: &PathBuf) -> Result<Vec<Token>, Box<dyn Error>> {
     let source = load_source(preprocessed)?;
     let mut tokenizer = Tokenizer::new(source);
     let tokens = tokenizer.tokenize()?;
-    if args.lex {
-        println!("{:#?}", tokens);
-        return Ok(());
-    } 
+    Ok(tokens)
+}
 
+fn run_parser(tokens: Vec<Token>) -> Result<Program, Box<dyn Error>> {
     let mut parser = Parser::new(tokens);
     let program = parser.parse_program()?;
-    if args.parsed {
-        pretty_print(program);
-        return Ok(())
-    }
+    Ok(program)
+}
 
-    let asm_program = gen_program(program);
-    if args.codegen {
-        println!("{:#?}", asm_program);
-        return Ok(())
-    } 
-    
-    let mut output_file = preprocessed.clone();
-    output_file.set_extension("s");
+fn run_poiser(program: Program) -> PoiseProg {
+    gen_poise(program)
+}
+
+fn run_codegen(program: Program) -> ProgramAsm {
+    gen_program(program)
+}
+
+fn run_emitter(asm_program: ProgramAsm, output_file: &PathBuf) -> Result<(), Box<dyn Error>> {
     fs::write(&output_file, emit_program(asm_program))?;
-    std::fs::remove_file(preprocessed)?;
     Ok(())
 }
 
@@ -99,3 +97,35 @@ pub fn run_assembler(input_file: &PathBuf) -> Result<(), DriverError> {
         }
 }
 
+pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<(), Box<dyn Error>> {
+    let preprocessed = input_file.clone();
+    let lexed = run_lexer(&preprocessed)?;
+    std::fs::remove_file(preprocessed)?;
+    if args.lex {
+        println!("{:#?}", lexed);
+        std::process::exit(0);
+    } 
+
+    let parsed = run_parser(lexed)?;
+    if args.parse {
+        pretty_print(parsed);
+        std::process::exit(0);
+    }
+
+    let poise = run_poiser(parsed);
+    if args.tacky {
+        println!("{:#?}", poise);
+        std::process::exit(0);
+    }
+
+    //let asm = run_codegen(parsed);
+    //if args.codegen {
+    //    println!("{:#?}", asm);
+    //    std::process::exit(0);
+    //}
+    
+    //let mut output_file = input_file.clone();
+    //output_file.set_extension("");
+    //run_emitter(asm, &output_file)?;
+    Ok(())
+}

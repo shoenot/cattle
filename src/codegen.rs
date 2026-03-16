@@ -42,7 +42,7 @@ fn gen_function(func: parser::Function) -> FunctionAsm {
 fn gen_instructions(statement: parser::Statement) -> Vec<InstructionAsm> {
     match statement {
         parser::Statement::Return(src) => {
-            vec![InstructionAsm::Mov(gen_operand(src), Operand::Reg(Register::EAX)), InstructionAsm::Ret]
+            vec![InstructionAsm::Mov(gen_operand(src), Operand::Reg(Register::EAX)), InstructionAsm::Ret]    
         }
     }
 }
@@ -50,5 +50,6 @@ fn gen_instructions(statement: parser::Statement) -> Vec<InstructionAsm> {
 fn gen_operand(exp: parser::Expression) -> Operand {
     let expression = match exp {
         parser::Expression::Constant(val) => return Operand::Imm(val),
+        _ => return Operand::Imm(1),
     };
 }
