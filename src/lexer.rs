@@ -40,13 +40,21 @@ pub enum TokenType {
     Percent,
     Minus,
     DoubleMinus,
+    Equal,
+    DoubleEqual,
+    NotEqual,
     Ampersand,
+    DoubleAmpersand,
     Pipe,
+    DoublePipe,
     Caret,
-    LeftAngled,
-    DualLeftAngled,
-    RightAngled,
-    DualRightAngled,
+    Exclamation,
+    LessThan,
+    DoubleLeftAngled,
+    GreaterThan,
+    DoubleRightAngled,
+    LessOrEqual,
+    GreaterOrEqual,
     Constant(i32),
     Int,
     Void,
@@ -61,7 +69,6 @@ pub struct Token {
 
 pub struct Tokenizer {
     chars: Peekable<IntoIter<char>>,
-    start: usize,
     current: usize,
     col: usize,
     len: usize,
@@ -72,7 +79,6 @@ impl Tokenizer {
     pub fn new(source: String) -> Tokenizer {
         Tokenizer {
             chars: source.chars().collect::<Vec<char>>().into_iter().peekable(),
-            start: 0,
             current: 0,
             col: 0,
             len: source.len(),
@@ -81,8 +87,9 @@ impl Tokenizer {
     }
 
     fn advance(&mut self) -> char {
-        let char = self.chars.next().unwrap_or(' ');
+        let char = self.chars.next().unwrap_or('\0');
         self.current += 1;
+        self.col += 1;
         char
     }
 
@@ -90,7 +97,7 @@ impl Tokenizer {
         while let Some(&c) = self.chars.peek() {
             match c {
                 '\n' => { self.line += 1; self.chars.next(); self.current += 1; self.col = 0},
-                ' ' | '\r' | '\t' => {self.chars.next(); self.current += 1},
+                ' ' | '\r' | '\t' => {self.chars.next(); self.current += 1; self.col +=1},
                 _ => break,
             }
         }
@@ -111,7 +118,6 @@ impl Tokenizer {
 
     fn next_token(&mut self) -> Result<Option<Token>, LexerError> {
         self.skip_whitespace();
-        self.start = self.current;
         if self.at_end() {
             return Ok(None);
         }
@@ -126,15 +132,29 @@ impl Tokenizer {
             ';' => TokenType::Semicolon,
             '~' => TokenType::Tilde,
             '+' => TokenType::Plus,
-            '-' => self.is_double_char('-', TokenType::Minus, TokenType::DoubleMinus),
             '*' => TokenType::Asterisk,
             '/' => TokenType::FwdSlash,
             '%' => TokenType::Percent,
-            '&' => TokenType::Ampersand,
-            '|' => TokenType::Pipe,
             '^' => TokenType::Caret,
-            '<' => self.is_double_char('<', TokenType::LeftAngled, TokenType::DualLeftAngled),
-            '>' => self.is_double_char('>', TokenType::RightAngled, TokenType::DualRightAngled),
+            '-' => self.is_double_char('-', TokenType::Minus, TokenType::DoubleMinus),
+            '!' => self.is_double_char('=', TokenType::Exclamation, TokenType::NotEqual),
+            '=' => self.is_double_char('=', TokenType::Equal, TokenType::DoubleEqual),
+            '&' => self.is_double_char('&', TokenType::Ampersand, TokenType::DoubleAmpersand),
+            '|' => self.is_double_char('|', TokenType::Pipe, TokenType::DoublePipe),
+            '<' => {
+                match self.peek()  {
+                    '<' => { self.advance(); TokenType::DoubleLeftAngled },
+                    '=' => { self.advance(); TokenType::LessOrEqual },
+                    _ => TokenType::LessThan,
+                }
+            }
+            '>' => {
+                match self.peek()  {
+                    '>' => { self.advance(); TokenType::DoubleRightAngled },
+                    '=' => { self.advance(); TokenType::GreaterOrEqual },
+                    _ => TokenType::GreaterThan,
+                }
+            }
             other => {
                 if other.is_digit(10) {
                     self.scan_constant(other)?
@@ -182,7 +202,7 @@ impl Tokenizer {
 
     fn scan_text(&mut self, first: char) -> TokenType {
         let mut word = String::from(first);
-        while self.peek().is_ascii_alphanumeric() {
+        while self.peek().is_ascii_alphanumeric() || self.peek() == '_' {
             word.push(self.advance());
         }
         match self.parse_keyword(&word) {

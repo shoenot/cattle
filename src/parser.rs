@@ -52,8 +52,9 @@ pub enum Expression {
 
 #[derive(Debug)]
 pub enum UnaryOp {
-    Negate,
     Complement,
+    Negate,
+    Not,
 }
 
 #[derive(Debug)]
@@ -68,6 +69,14 @@ pub enum BinaryOp {
     BitwiseXor,
     LeftShift,
     RightShift,
+    LogicalAnd,
+    LogicalOr,
+    Equal,
+    NotEqual,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
 }
 
 #[derive(Debug)]
@@ -177,6 +186,7 @@ impl Parser {
                 self.expect(TokenType::CloseParen)?;
                 Ok(expression)
             },
+            TokenType::Exclamation => self.parse_unop(UnaryOp::Not),
             TokenType::Tilde => self.parse_unop(UnaryOp::Complement),
             TokenType::Minus => self.parse_unop(UnaryOp::Negate),
             _ => Err(ParseError::ExpectedExpression(self.current_span))
@@ -195,12 +205,20 @@ impl Parser {
             TokenType::Asterisk => Ok(Some(BinaryOp::Multiply)),
             TokenType::FwdSlash => Ok(Some(BinaryOp::Divide)),
             TokenType::Percent => Ok(Some(BinaryOp::Remainder)),
-            TokenType::DualLeftAngled => Ok(Some(BinaryOp::LeftShift)),
-            TokenType::DualRightAngled => Ok(Some(BinaryOp::RightShift)),
+            TokenType::DoubleLeftAngled => Ok(Some(BinaryOp::LeftShift)),
+            TokenType::DoubleRightAngled => Ok(Some(BinaryOp::RightShift)),
             TokenType::Ampersand => Ok(Some(BinaryOp::BitwiseAnd)),
             TokenType::Pipe => Ok(Some(BinaryOp::BitwiseOr)),
             TokenType::Caret => Ok(Some(BinaryOp::BitwiseXor)),
-            TokenType::LeftAngled | TokenType::RightAngled | TokenType::DoubleMinus => {
+            TokenType::DoubleAmpersand => Ok(Some(BinaryOp::LogicalAnd)),
+            TokenType::DoublePipe => Ok(Some(BinaryOp::LogicalOr)),
+            TokenType::DoubleEqual => Ok(Some(BinaryOp::Equal)),
+            TokenType::NotEqual => Ok(Some(BinaryOp::NotEqual)),
+            TokenType::LessThan => Ok(Some(BinaryOp::LessThan)),
+            TokenType::LessOrEqual => Ok(Some(BinaryOp::LessOrEqual)),
+            TokenType::GreaterThan => Ok(Some(BinaryOp::GreaterThan)),
+            TokenType::GreaterOrEqual => Ok(Some(BinaryOp::GreaterOrEqual)),
+            TokenType::DoubleMinus | TokenType::Equal => {
                 Err(ParseError::Unimplemented(self.current_span))
             }
             _ => Ok(None),
@@ -209,16 +227,24 @@ impl Parser {
 
     fn precedence(&mut self, op: &BinaryOp) -> i32 {
         match op {
-            BinaryOp::Multiply => 50,
-            BinaryOp::Divide => 50,
-            BinaryOp::Remainder => 50,
-            BinaryOp::Add => 45,
-            BinaryOp::Subtract => 45,
-            BinaryOp::LeftShift => 40,
-            BinaryOp::RightShift  => 40,
-            BinaryOp::BitwiseAnd => 38,
-            BinaryOp::BitwiseXor => 36,
-            BinaryOp::BitwiseOr => 34,
+            BinaryOp::Multiply       => 50,
+            BinaryOp::Divide         => 50,
+            BinaryOp::Remainder      => 50,
+            BinaryOp::Add            => 45,
+            BinaryOp::Subtract       => 45,
+            BinaryOp::LeftShift      => 42,
+            BinaryOp::RightShift     => 42,
+            BinaryOp::LessThan       => 35,
+            BinaryOp::LessOrEqual    => 35,
+            BinaryOp::GreaterThan    => 35,
+            BinaryOp::GreaterOrEqual => 35,
+            BinaryOp::Equal          => 30,
+            BinaryOp::NotEqual       => 30,
+            BinaryOp::BitwiseAnd     => 28,
+            BinaryOp::BitwiseXor     => 26,
+            BinaryOp::BitwiseOr      => 24,
+            BinaryOp::LogicalAnd     => 10,
+            BinaryOp::LogicalOr      => 5,
         }
     }
 }

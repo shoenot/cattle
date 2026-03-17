@@ -91,6 +91,7 @@ fn emit_expression(
             let unary_op = match op {
                 parser::UnaryOp::Negate => PoiseUnaryOp::Negate,
                 parser::UnaryOp::Complement => PoiseUnaryOp::Complement,
+                _ => todo!()
             };
             instructions.push(PoiseInstruction::Unary { op: unary_op, src, dst: dst.clone() });
             dst
@@ -107,6 +108,7 @@ fn emit_expression(
                 parser::BinaryOp::BitwiseAnd => PoiseBinaryOp::BitwiseAnd,
                 parser::BinaryOp::BitwiseOr => PoiseBinaryOp::BitwiseOr,
                 parser::BinaryOp::BitwiseXor => PoiseBinaryOp::BitwiseXor,
+                _ => todo!()
             };
             let v1 = emit_expression(*exp1, instructions, count);
             let v2 = emit_expression(*exp2, instructions, count);
