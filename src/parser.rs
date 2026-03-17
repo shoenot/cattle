@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::iter::Peekable;
 use std::vec::IntoIter;
 use std::fmt;
@@ -44,13 +45,23 @@ pub enum Statement {
 #[derive(Debug)]
 pub enum Expression {
     Constant(i32),
-    Unary(UnaryOp, Box<Expression>)
+    Unary(UnaryOp, Box<Expression>),
+    Binary(BinaryOp, Box<Expression>, Box<Expression>)
 }
 
 #[derive(Debug)]
 pub enum UnaryOp {
     Negate,
     Complement,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Remainder,
 }
 
 #[derive(Debug)]
@@ -139,26 +150,42 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression, ParseError> {
+        let mut left = self.parse_factor()?;
+        while let Some(op) = self.peek_binop()? {
+            self.advance()?;
+            let right = self.parse_factor()?;
+            left = Expression::Binary(op, Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_factor(&mut self) -> Result<Expression, ParseError> {
         let token = self.advance()?;
         match token.token_type {
             TokenType::Constant(value) => Ok(Expression::Constant(value)),
-            TokenType::Tilde => {
-                let operand = self.parse_expression()?;
-                Ok(Expression::Unary(UnaryOp::Complement, Box::new(operand)))
-            },
-            TokenType::Minus => {
-                let operand = self.parse_expression()?;
-                Ok(Expression::Unary(UnaryOp::Negate, Box::new(operand)))
-            },
             TokenType::OpenParen => {
                 let expression = self.parse_expression()?;
                 self.expect(TokenType::CloseParen)?;
                 Ok(expression)
             },
+            TokenType::Tilde => self.parse_unop(UnaryOp::Complement),
+            TokenType::Minus => self.parse_unop(UnaryOp::Negate),
             _ => Err(ParseError::ExpectedExpression(self.current_span))
         }
     }
 
+    fn parse_unop(&mut self, op: UnaryOp) -> Result<Expression, ParseError> {
+        let operand = self.parse_expression()?;
+        Ok(Expression::Unary(op, Box::new(operand)))
+    }
+
+    fn peek_binop(&mut self) -> Result<Option<BinaryOp>, ParseError> {
+        match self.peek()?.token_type {
+            TokenType::Plus => Ok(Some(BinaryOp::Add)),
+            TokenType::Minus => Ok(Some(BinaryOp::Subtract)),
+            _ => Ok(None),
+        }
+    }
 }
 
 pub fn pretty_print(tree: Program) {

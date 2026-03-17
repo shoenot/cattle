@@ -34,6 +34,10 @@ pub enum TokenType {
     CloseBrace,
     Semicolon,
     Tilde,
+    Plus,
+    Asterisk,
+    FwdSlash,
+    Percent,
     Minus,
     Constant(i32),
     Int,
@@ -103,6 +107,10 @@ impl Tokenizer {
             '}' => TokenType::CloseBrace,
             ';' => TokenType::Semicolon,
             '~' => TokenType::Tilde,
+            '+' => TokenType::Plus,
+            '*' => TokenType::Asterisk,
+            '/' => TokenType::FwdSlash,
+            '%' => TokenType::Percent,
             '-' => {
                 if self.peek() != '-' {
                     TokenType::Minus
