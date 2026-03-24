@@ -253,8 +253,8 @@ impl Parser {
                     ret
                 } else {
                     let mut expr = Expression::Var(name);
-                    let expr = self.check_postfix(expr)?;
-                    let expr = self.parse_expression_cont(expr, 0)?;
+                    expr = self.check_postfix(expr)?;
+                    expr = self.parse_expression_cont(expr, 0)?;
                     self.expect(TokenType::Semicolon)?;
                     Statement::Expression(expr)
                 }
@@ -442,4 +442,4 @@ impl Parser {
 
 pub fn pretty_print(tree: Program) {
     println!("{:#?}", tree);
-}
+} 

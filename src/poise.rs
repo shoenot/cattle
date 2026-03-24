@@ -84,14 +84,18 @@ pub fn gen_poise(tree: parser::Program) -> PoiseProg {
 fn gen_poisefunc(func: parser::Function, count: &mut TmpCount) -> PoiseFunc {
     let mut instructions = Vec::new();
     let name = func.identifier;
-    for blockitem in func.body {
-        match blockitem {
-            parser::BlockItem::S(s) => gen_inst_statement(s, &mut instructions, count),
-            parser::BlockItem::D(d) => gen_inst_declaration(d, &mut instructions, count),
-        }
-    }
+    gen_inst_block(func.body, &mut instructions, count);
     instructions.push(PoiseInstruction::Return(PoiseVal::Constant(0)));
     PoiseFunc{ identifier: name, body: instructions }
+}
+
+fn gen_inst_block(block: parser::Block, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {
+    for blockitem in block.items {
+        match blockitem {
+            parser::BlockItem::S(s) => gen_inst_statement(s, instructions, count),
+            parser::BlockItem::D(d) => gen_inst_declaration(d, instructions, count),
+        }
+    }
 }
 
 fn gen_inst_declaration(declaration: parser::Declaration, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {
@@ -130,6 +134,7 @@ fn gen_inst_statement(statement: parser::Statement, instructions: &mut Vec<Poise
         },
         parser::Statement::Label(name) => instructions.push(PoiseInstruction::Label(name)),
         parser::Statement::Goto(name) => instructions.push(PoiseInstruction::Jump(name)),
+        parser::Statement::Compound(block) => gen_inst_block(block, instructions, count),
         _ => todo!(),
     }
 }
@@ -262,7 +267,6 @@ fn emit_un_exp(op: parser::UnaryOp,
             parser::UnaryOp::Negate => PoiseUnaryOp::Negate,
             parser::UnaryOp::Complement => PoiseUnaryOp::Complement,
             parser::UnaryOp::Not => PoiseUnaryOp::Not,
-            _ => todo!()
         };
         instructions.push(PoiseInstruction::Unary { op: unary_op, src, dst: dst.clone() });
         dst
@@ -293,7 +297,7 @@ fn emit_short_circuit_exp(op: parser::BinaryOp,
             instructions.push(PoiseInstruction::Label(false_label));
             instructions.push(PoiseInstruction::Copy{src: PoiseVal::Constant(0), dst: dst.clone() });
             instructions.push(PoiseInstruction::Label(true_label));
-            return dst
+            dst
         },
         parser::BinaryOp::LogicalOr => {
             let v1 = emit_expression(exp1, instructions, count);
@@ -309,7 +313,7 @@ fn emit_short_circuit_exp(op: parser::BinaryOp,
             instructions.push(PoiseInstruction::Label(true_label));
             instructions.push(PoiseInstruction::Copy{src: PoiseVal::Constant(1), dst: dst.clone() });
             instructions.push(PoiseInstruction::Label(false_label));
-            return dst
+            dst
         },
         _ => panic!(),
     }

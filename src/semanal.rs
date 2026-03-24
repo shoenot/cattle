@@ -34,13 +34,12 @@ impl std::error::Error for SemanticError {}
 
 struct Counter {
     count: usize,
+    current_block: usize,
 }
-
-
 
 impl Counter {
     fn namegen(&mut self, name: &str) -> String {
-        let new = format!("{}.{}", name, self.count);
+        let new = format!("{}.{}_{}", name, self.count, self.current_block);
         self.count += 1;
         new
     }
@@ -50,16 +49,24 @@ impl Counter {
     }
 }
 
-fn resolve_program_vars(program: &mut Program,
-    var_map: &mut HashMap<String, String>,
+fn resolve_block(block: &mut Block,
+    var_map: &mut HashMap<String, (String, usize)>,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
-    for blockitem in &mut program.function.body.items {
+    for blockitem in &mut block.items {
         match blockitem {
             BlockItem::S(s) => resolve_statement(s, var_map, label_map, counter)?,
             BlockItem::D(d) => resolve_declaration(d, var_map, counter)?,
         }
     }
+    Ok(())
+}
+
+fn resolve_program_vars(program: &mut Program,
+    var_map: &mut HashMap<String, (String, usize)>,
+    label_map: &mut HashMap<String, (String, bool)>,
+    counter: &mut Counter) -> Result<(), SemanticError> {
+    resolve_block(&mut program.function.body, var_map, label_map, counter)?;
     Ok(())
 }
 
@@ -101,7 +108,7 @@ fn process_goto(name: &mut String,
 }
 
 fn resolve_statement(statement: &mut Statement,
-    var_map: &mut HashMap<String, String>,
+    var_map: &mut HashMap<String, (String, usize)>,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
     match statement {
@@ -117,21 +124,29 @@ fn resolve_statement(statement: &mut Statement,
         Statement::Null => return Ok(()),
         Statement::Label(name) => process_label(name, label_map, counter)?,
         Statement::Goto(name) => process_goto(name, label_map, counter)?,
+        Statement::Compound(block) => {
+            let mut new_map = var_map.clone();
+            counter.current_block += 1;
+            resolve_block(block, &mut new_map, label_map, counter)?;
+            counter.current_block -= 1;
+        },
     }
     Ok(())
 }
 
 fn resolve_declaration(declaration: &mut Declaration,
-    var_map: &mut HashMap<String, String>,
+    var_map: &mut HashMap<String, (String, usize)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
 
-    if var_map.contains_key(&declaration.identifier) {
-        return Err(SemanticError::DoubleDeclaration)
-    } else {
-        let newname = counter.namegen(&declaration.identifier);
-        var_map.insert(declaration.identifier.clone(), newname.clone());
-        declaration.identifier = newname;
+    if let Some((_, blk)) = var_map.get(&declaration.identifier) {
+        if *blk == counter.current_block {
+            return Err(SemanticError::DoubleDeclaration)
+        }
     }
+
+    let newname = counter.namegen(&declaration.identifier);
+    var_map.insert(declaration.identifier.clone(), (newname.clone(), counter.current_block));
+    declaration.identifier = newname;
 
     match &mut declaration.init {
         None => return Ok(()),
@@ -143,11 +158,11 @@ fn resolve_declaration(declaration: &mut Declaration,
 }
 
 fn resolve_expression(expression: &mut Expression,
-    var_map: &mut HashMap<String, String>,
+    var_map: &mut HashMap<String, (String, usize)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
     match expression {
         Expression::Var(x) => {
-            if let Some(name) = var_map.get(x) {
+            if let Some((name, _)) = var_map.get(x) {
                 *x = name.into();
             } else {
                 return Err(SemanticError::UseBeforeDeclaration(x.clone()));
@@ -186,7 +201,7 @@ fn resolve_expression(expression: &mut Expression,
     Ok(())
 }
 
-pub fn duplicate_label_check(label_map: HashMap<String, (String, bool)>) -> Result<(), SemanticError> {
+pub fn check_undeclared_label(label_map: HashMap<String, (String, bool)>) -> Result<(), SemanticError> {
     for (key, (_, status)) in &label_map {
         if !status {
             return Err(SemanticError::UndeclaredLabel(key.clone()));
@@ -195,13 +210,18 @@ pub fn duplicate_label_check(label_map: HashMap<String, (String, bool)>) -> Resu
     Ok(())
 }
 
-pub fn check_label_before_dec(program: &Program) -> Result<(), SemanticError> {
-    let items = &program.function.body;
-    for i in 0..(items.len().saturating_sub(1)) {
-        if let BlockItem::S(Statement::Label(name)) = &items[i] {
-            if let BlockItem::D(_) = &items[i+1] {
-                return Err(SemanticError::LabelBeforeDeclaration(name.clone()));
-            }
+pub fn check_label_before_dec(items: &Vec<BlockItem>) -> Result<(), SemanticError> {
+    for i in 0..items.len() {
+        if let BlockItem::S(Statement::Compound(block)) = &items[i] {
+            check_label_before_dec(&block.items)?;
+        }
+
+        if i + 1 < items.len() {
+            if let BlockItem::S(Statement::Label(name)) = &items[i] {
+                if let BlockItem::D(_) = &items[i+1] {
+                    return Err(SemanticError::LabelBeforeDeclaration(name.clone()));
+                }
+            } 
         }
     }
     if let Some(BlockItem::S(Statement::Label(_))) = items.last() {
@@ -210,13 +230,13 @@ pub fn check_label_before_dec(program: &Program) -> Result<(), SemanticError> {
     Ok(())
 }
 
-pub fn semantic_analysis(program: &mut Program) -> Result<HashMap<String, String>, SemanticError>{
+pub fn semantic_analysis(program: &mut Program) -> Result<HashMap<String, (String, usize)>, SemanticError>{
     let mut var_map = HashMap::new();
     let mut label_map = HashMap::new();
-    let mut counter = Counter{count: 0};
+    let mut counter = Counter{count: 0, current_block: 1};
     resolve_program_vars(program, &mut var_map, &mut label_map, &mut counter)?;
-    duplicate_label_check(label_map)?;
-    check_label_before_dec(program)?;
+    check_undeclared_label(label_map)?;
+    check_label_before_dec(&program.function.body.items)?;
     Ok(var_map)
 }
 
