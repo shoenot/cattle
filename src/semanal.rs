@@ -153,18 +153,13 @@ fn resolve_expression(expression: &mut Expression,
         },
         Expression::Assignment(lhs, rhs) => {
             match lhs.as_mut() {
-                Expression::Var(x) => {
-                    if let Some(name) = var_map.get(x.as_str()) {
-                        *x = name.clone();
-                    } else {
-                        return Err(SemanticError::UseBeforeDeclaration(x.to_string()));
-                    }
-                },
+                Expression::Var(_) => {},
                 _ => {
                     eprintln!("Invalid L-value: {:?}", lhs);
                     return Err(SemanticError::InvalidLValue);
                 }
             }
+            resolve_expression(lhs.as_mut(), var_map, counter)?;
             resolve_expression(rhs.as_mut(), var_map, counter)?;
         },
         Expression::Unary(_, exp) => resolve_expression(exp.as_mut(), var_map, counter)?,
@@ -176,6 +171,13 @@ fn resolve_expression(expression: &mut Expression,
             resolve_expression(exp1.as_mut(), var_map, counter)?;
             resolve_expression(exp2.as_mut(), var_map, counter)?;
             resolve_expression(exp3.as_mut(), var_map, counter)?;
+        },
+        Expression::PostfixIncrement(exp) | Expression::PrefixIncrement(exp) | 
+        Expression::PostfixDecrement(exp) | Expression::PrefixDecrement(exp) => {
+            match **exp {
+                Expression::Var(_) => resolve_expression(exp.as_mut(), var_map, counter)?,
+                _ => return Err(SemanticError::InvalidLValue),
+            }
         },
         Expression::Constant(_) => return Ok(()),
     }

@@ -170,6 +170,50 @@ fn emit_expression(
             instructions.push(PoiseInstruction::Label(yes_label));
             dest
         },
+        parser::Expression::PrefixIncrement(e) => {
+            let var = emit_expression(*e, instructions, count);
+            instructions.push(PoiseInstruction::Binary{
+                op: PoiseBinaryOp::Add,
+                src1: var.clone(),
+                src2: PoiseVal::Constant(1),
+                dst: var.clone(),
+            });
+            var
+        },
+        parser::Expression::PrefixDecrement(e) => {
+            let var = emit_expression(*e, instructions, count);
+            instructions.push(PoiseInstruction::Binary{
+                op: PoiseBinaryOp::Subtract,
+                src1: var.clone(),
+                src2: PoiseVal::Constant(1),
+                dst: var.clone(),
+            });
+            var
+        },
+        parser::Expression::PostfixIncrement(e) => {
+            let var = emit_expression(*e, instructions, count);
+            let tmp = count.new_var();
+            instructions.push(PoiseInstruction::Copy { src: var.clone(), dst: tmp.clone() });
+            instructions.push(PoiseInstruction::Binary{
+                op: PoiseBinaryOp::Add,
+                src1: var.clone(),
+                src2: PoiseVal::Constant(1),
+                dst: var.clone(),
+            });
+            tmp
+        },
+        parser::Expression::PostfixDecrement(e) => {
+            let var = emit_expression(*e, instructions, count);
+            let tmp = count.new_var();
+            instructions.push(PoiseInstruction::Copy { src: var.clone(), dst: tmp.clone() });
+            instructions.push(PoiseInstruction::Binary{
+                op: PoiseBinaryOp::Subtract,
+                src1: var.clone(),
+                src2: PoiseVal::Constant(1),
+                dst: var.clone(),
+            });
+            tmp
+        },
         _ => todo!(),
     }
 }

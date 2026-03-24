@@ -60,7 +60,7 @@ pub enum Statement {
     Null,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
     Constant(i32),
     Var(String),
@@ -68,9 +68,13 @@ pub enum Expression {
     Unary(UnaryOp, Box<Expression>),
     Binary(BinaryOp, Box<Expression>, Box<Expression>),
     Conditional(Box<Expression>, Box<Expression>, Box<Expression>),
+    PrefixIncrement(Box<Expression>),
+    PostfixIncrement(Box<Expression>),
+    PrefixDecrement(Box<Expression>),
+    PostfixDecrement(Box<Expression>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     Complement,
     Negate,
@@ -239,7 +243,8 @@ impl Parser {
                     self.expect(TokenType::Colon)?;
                     ret
                 } else {
-                    let expr = Expression::Var(name);
+                    let mut expr = Expression::Var(name);
+                    let expr = self.check_postfix(expr)?;
                     let expr = self.parse_expression_cont(expr, 0)?;
                     self.expect(TokenType::Semicolon)?;
                     Statement::Expression(expr)
@@ -309,20 +314,47 @@ impl Parser {
 
     fn parse_factor(&mut self) -> Result<Expression, ParseError> {
         let token = self.advance()?;
-        match token.token_type {
-            TokenType::Constant(value) => Ok(Expression::Constant(value)),
+        let mut expr = match token.token_type {
+            TokenType::Constant(value) => Expression::Constant(value),
             TokenType::OpenParen => {
                 let expression = self.parse_expression(0)?;
                 self.expect(TokenType::CloseParen)?;
-                Ok(expression)
+                expression
             },
-            TokenType::Exclamation => self.parse_unop(UnaryOp::Not),
-            TokenType::Tilde => self.parse_unop(UnaryOp::Complement),
-            TokenType::Minus => self.parse_unop(UnaryOp::Negate),
-            TokenType::Identifier(name) => Ok(Expression::Var(name)),
+            TokenType::Exclamation => self.parse_unop(UnaryOp::Not)?,
+            TokenType::Tilde => self.parse_unop(UnaryOp::Complement)?,
+            TokenType::Minus => self.parse_unop(UnaryOp::Negate)?,
+            TokenType::Identifier(name) => Expression::Var(name),
+            TokenType::DoublePlus => {
+                let operand = self.parse_factor()?;
+                Expression::PrefixIncrement(Box::new(operand))
+            },
+            TokenType::DoubleMinus => {
+                let operand = self.parse_factor()?;
+                Expression::PrefixDecrement(Box::new(operand))
+            },
             _ => {
                 eprintln!("{:#?}", token);
-                Err(ParseError::ExpectedExpression(self.current_span))
+                return Err(ParseError::ExpectedExpression(self.current_span))
+            }
+        };
+        let expr = self.check_postfix(expr)?;
+        Ok(expr)
+    }
+
+    fn check_postfix(&mut self, expr: Expression) -> Result<Expression, ParseError> {
+        let mut expr = expr;
+        loop {
+            match self.peek()?.token_type {
+                TokenType::DoublePlus => {
+                    self.advance()?;
+                    expr = Expression::PostfixIncrement(Box::new(expr.clone()));
+                },
+                TokenType::DoubleMinus => {
+                    self.advance()?;
+                    expr = Expression::PostfixDecrement(Box::new(expr.clone()));
+                },
+                _ => return Ok(expr),
             }
         }
     }
@@ -364,9 +396,6 @@ impl Parser {
             TokenType::DLAngledEqual => Ok(Some(BinaryOp::OpSet(Box::new(BinaryOp::LeftShift)))),
             TokenType::DRAngledEqual => Ok(Some(BinaryOp::OpSet(Box::new(BinaryOp::RightShift)))),
             TokenType::QuestionMark => Ok(Some(BinaryOp::Ternary)),
-            TokenType::DoubleMinus | TokenType::DoublePlus => {
-                Err(ParseError::Unimplemented(self.current_span))
-            }
             _ => Ok(None),
         }
     }
