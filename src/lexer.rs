@@ -180,6 +180,9 @@ impl Tokenizer {
             "for" => TokenType::For,
             "break" => TokenType::Break,
             "continue" => TokenType::Continue,
+            "switch" => TokenType::Switch,
+            "case" => TokenType::Case,
+            "default" => TokenType::Default,
             _ => return None,
         };
 

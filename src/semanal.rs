@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 use crate::parser::*;
@@ -7,14 +7,17 @@ use crate::parser::*;
 pub enum SemanticError {
     UseBeforeDeclaration(String),
     InvalidLValue,
-    InvalidExpression,
     DoubleDeclaration,
     UndeclaredLabel(String),
     DuplicateLabel(String),
     LabelBeforeDeclaration(String),
     LabelWithoutStatement,
-    BreakOutsideLoop,
+    BreakOutsideLoopOrSwitch,
+    CaseOutsideSwitch,
     ContOutsideLoop,
+    NonConstantCase,
+    DuplicateCase,
+    DuplicateDefault,
 }
 
 impl fmt::Display for SemanticError {
@@ -22,14 +25,17 @@ impl fmt::Display for SemanticError {
         match self {
             SemanticError::UseBeforeDeclaration(n) => write!(f, "Used {} before it was declared", n),
             SemanticError::InvalidLValue => write!(f, "Invalid lvalue"),
-            SemanticError::InvalidExpression => write!(f, "Invalid expression"),
             SemanticError::DoubleDeclaration => write!(f, "Variable declared"),
             SemanticError::UndeclaredLabel(n) => write!(f, "Undeclared label {}", n),
             SemanticError::DuplicateLabel(n) => write!(f, "Duplicate label {}", n),
             SemanticError::LabelWithoutStatement => write!(f, "Label without statement after it"),
             SemanticError::LabelBeforeDeclaration(n) => write!(f, "Using label {} before a declaration", n),
-            SemanticError::BreakOutsideLoop => write!(f, "Break outside loop"),
+            SemanticError::BreakOutsideLoopOrSwitch => write!(f, "Break outside loop/switch"),
+            SemanticError::CaseOutsideSwitch => write!(f, "Case outside switch"),
             SemanticError::ContOutsideLoop => write!(f, "Cont outside loop"),
+            SemanticError::NonConstantCase => write!(f, "Non constant case"),
+            SemanticError::DuplicateCase => write!(f, "Duplicate case"),
+            SemanticError::DuplicateDefault => write!(f, "Duplicate label"),
         }
     }
 }
@@ -40,6 +46,7 @@ pub fn semantic_analysis(program: &mut Program) -> Result<HashMap<String, (Strin
     let map = variable_resolution_pass(program)?;
     label_semantic_analysis_pass(program)?;
     loop_labeling_pass(program)?;
+    switch_collection_pass(program)?;
     Ok(map)
 }
 
@@ -133,7 +140,6 @@ fn resolve_statement(statement: &mut Statement,
                 resolve_statement(n, var_map, label_map, counter)?;
             }
         },
-        Statement::Null => return Ok(()),
         Statement::Label(name) => process_label(name, label_map, counter)?,
         Statement::Goto(name) => process_goto(name, label_map, counter)?,
         Statement::Compound(block) => {
@@ -156,7 +162,18 @@ fn resolve_statement(statement: &mut Statement,
             resolve_statement(body, &mut new_map, label_map, counter)?;
             counter.current_block -= 1;
         },
-        Statement::Break(_) | Statement::Continue(_) => {},
+        Statement::Switch { scrutinee, body, .. } => {
+            resolve_expression(scrutinee, var_map, counter)?;
+            resolve_statement(body, var_map, label_map, counter)?;
+        },
+        Statement::Case{expr, ..} => {
+            match eval_constant(expr) {
+                Some(value) => *expr = Expression::Constant(value),
+                None => return Err(SemanticError::NonConstantCase),
+            }
+        },
+        Statement::Null | Statement::Break(_) | 
+        Statement::Continue(_) | Statement::Default{..} => {},
     }
     Ok(())
 }
@@ -275,6 +292,47 @@ fn label_semantic_analysis_pass(program: &mut Program) -> Result<(), SemanticErr
     check_label_before_dec(items)
 }
 
+fn eval_constant(expr: &Expression) -> Option<i32> {
+    match expr {
+        Expression::Constant(n) => Some(*n),
+        Expression::Unary(op, expr) => {
+            let val = eval_constant(expr)?;
+            match op {
+                UnaryOp::Negate => Some(-val),
+                UnaryOp::Complement => Some(!val),
+                UnaryOp::Not => Some((val == 0) as i32),
+            }
+        },
+        Expression::Binary(op, left, right) => {
+            let l = eval_constant(left)?;
+            let r = eval_constant(right)?;
+            match op {
+                BinaryOp::Add             => Some(l + r),
+                BinaryOp::Subtract        => Some(l - r),
+                BinaryOp::Multiply        => Some(l * r),
+                BinaryOp::Divide          => if r == 0 { None } else { Some(l / r) },
+                BinaryOp::Remainder       => if r == 0 { None } else { Some(l % r) },
+                BinaryOp::LeftShift       => Some(l << r),
+                BinaryOp::RightShift      => Some(l >> r),
+                BinaryOp::LessThan        => Some((l < r) as i32),
+                BinaryOp::LessOrEqual     => Some((l <= r) as i32),
+                BinaryOp::GreaterThan     => Some((l > r) as i32),
+                BinaryOp::GreaterOrEqual  => Some((l >= r) as i32),
+                BinaryOp::Equal           => Some((l == r) as i32),
+                BinaryOp::NotEqual        => Some((l != r) as i32),
+                BinaryOp::BitwiseAnd      => Some(l & r),
+                BinaryOp::BitwiseXor      => Some(l ^ r),
+                BinaryOp::BitwiseOr       => Some(l | r),
+                BinaryOp::LogicalAnd      => Some((l != 0 && r != 0) as i32),
+                BinaryOp::LogicalOr       => Some((l != 0 || r != 0) as i32),
+                _ => None,
+            }
+        },
+        _ => None,
+    }
+}
+
+
 fn variable_resolution_pass(program: &mut Program) -> Result<HashMap<String, (String, usize)>, SemanticError>{
     let mut var_map = HashMap::new();
     let mut label_map = HashMap::new();
@@ -282,12 +340,14 @@ fn variable_resolution_pass(program: &mut Program) -> Result<HashMap<String, (St
     resolve_program_vars(program, &mut var_map, &mut label_map, &mut counter)?;
     check_undeclared_label(label_map)?;
     Ok(var_map)
-}
+} 
 
 // Loop labeling pass
 struct LoopCounter {
     counter: usize,
     stack: Vec<String>,
+    loopstack: Vec<String>,
+    switchstack: Vec<String>,
 }
 
 impl LoopCounter {
@@ -299,7 +359,12 @@ impl LoopCounter {
 }
 
 fn loop_labeling_pass(program: &mut Program) -> Result<(), SemanticError> {
-    let mut count = LoopCounter{ counter: 0, stack: Vec::new() };
+    let mut count = LoopCounter{ 
+        counter: 0, 
+        stack: Vec::new(), 
+        loopstack: Vec::new(),
+        switchstack: Vec::new(),
+    };
     assign_loop_labels(&mut program.function.body.items, &mut count)?;
     Ok(())
 }
@@ -310,20 +375,22 @@ fn assign_label(st: &mut Statement, count: &mut LoopCounter) -> Result<(), Seman
         Statement::While { cond:_, body, lab } |
         Statement::For { init:_, cond:_, post:_, body, lab } => {
             let newlab = count.genlabel();
-            count.stack.push(newlab);
-            *lab = count.stack.last().unwrap().into();
+            *lab = newlab.clone();
+            count.stack.push(newlab.clone());
+            count.loopstack.push(newlab);
             assign_label(body, count)?;
+            count.loopstack.pop();
             count.stack.pop();
         },
         Statement::Break(lab) => {
             if let Some(newlab) = count.stack.last() {
                 *lab = newlab.into();
             } else {
-                return Err(SemanticError::BreakOutsideLoop);
+                return Err(SemanticError::BreakOutsideLoopOrSwitch);
             }
         },
         Statement::Continue(lab) => {
-            if let Some(newlab) = count.stack.last() {
+            if let Some(newlab) = count.loopstack.last() {
                 *lab = newlab.into();
             } else {
                 return Err(SemanticError::ContOutsideLoop);
@@ -338,6 +405,27 @@ fn assign_label(st: &mut Statement, count: &mut LoopCounter) -> Result<(), Seman
                 assign_label(no, count)?;
             }
         },
+        Statement::Switch { scrutinee:_, body, lab, cases:_ } => {
+            let newlab = count.genlabel();
+            *lab = newlab.clone();
+            count.stack.push(newlab.clone());
+            count.switchstack.push(newlab);
+            assign_label(body, count)?;
+            count.switchstack.pop();
+            count.stack.pop();
+        },
+        Statement::Case { expr:_, lab } => {
+            if count.switchstack.is_empty() {
+                return Err(SemanticError::CaseOutsideSwitch);
+            }
+            *lab = count.genlabel();
+        },
+        Statement::Default { lab } => {
+            if count.switchstack.is_empty() {
+                return Err(SemanticError::CaseOutsideSwitch);
+            }
+            *lab = count.genlabel();
+        },
         _ => {},
     }
     Ok(())
@@ -349,5 +437,92 @@ fn assign_loop_labels(items: &mut Vec<BlockItem>, count: &mut LoopCounter) -> Re
             assign_label(st, count)?;
         }
     }
+    Ok(())
+}
+
+fn collect_cases_in_block(items: &Vec<BlockItem>) -> Result<Vec<(Option<Expression>, String)>, SemanticError> {
+    let mut cases = Vec::new();
+    for item in items {
+        match item {
+            BlockItem::S(Statement::Case { expr, lab }) => {
+                cases.push((Some(expr.clone()), lab.clone()));
+            },
+            BlockItem::S(Statement::Default { lab }) => {
+                cases.push((None, lab.clone()));
+            },
+            BlockItem::S(Statement::Compound(bl)) => {
+                cases.append(&mut collect_cases_in_block(&bl.items)?);
+            }
+            BlockItem::S(_) | BlockItem::D(_) => {},
+        }
+    }
+    Ok(cases)
+}
+
+fn collect_switch_cases(st: &Statement) -> Result<Vec<(Option<Expression>, String)>, SemanticError> {
+    let mut cases = Vec::new();
+    if let Statement::Compound(block) = st {
+        cases.append(&mut collect_cases_in_block(&block.items)?);
+    } else if let Statement::Case { expr, lab } = st {
+        cases.push((Some(expr.clone()), lab.clone()));
+    } else if let Statement::Default { lab } = st {
+        cases.push((None, lab.clone()));
+    }
+    Ok(cases)
+}
+
+fn statement_collector(st: &mut Statement) -> Result<(), SemanticError> {
+        match st {
+            Statement::Switch { cases, body, .. } => {
+                *cases = collect_switch_cases(body)?;   
+
+                let mut seen = HashSet::new();
+                for (expr, _) in cases.iter() {
+                    if let Some(Expression::Constant(value)) = expr {
+                        if !seen.insert(value) {
+                            return Err(SemanticError::DuplicateCase);
+                        }
+                    }
+                }
+
+                let default_count = cases.iter().filter(|(expr,_)| expr.is_none()).count();
+                if default_count > 1 { return Err(SemanticError::DuplicateDefault); }
+
+                statement_collector(body)?;
+            },
+            Statement::If(_, yes, no) => {
+                statement_collector(yes)?;
+                if let Some(no) = no {
+                    statement_collector(no)?;
+                }
+            },
+            Statement::While { body, .. } => {
+                statement_collector(body)?;
+            },
+            Statement::DoWhile { body, .. } => {
+                statement_collector(body)?;
+            },
+            Statement::For { body, .. } => {
+                statement_collector(body)?;
+            },
+            Statement::Compound(bl) => {
+                block_collector(&mut bl.items)?;
+            }
+            _ => {}
+        }
+    Ok(())
+}
+
+fn block_collector(items: &mut Vec<BlockItem>) -> Result<(), SemanticError> {
+    for item in items {
+        if let BlockItem::S(st) = item {
+            statement_collector(st)?;
+        }
+    }
+    Ok(())
+}
+
+fn switch_collection_pass(program: &mut Program) -> Result<(), SemanticError> {
+    block_collector(&mut program.function.body.items)?;
     Ok(())
 }

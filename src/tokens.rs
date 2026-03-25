@@ -53,4 +53,7 @@ pub enum TokenType {
     For,
     Break,
     Continue,
+    Switch,
+    Case,
+    Default,
 }

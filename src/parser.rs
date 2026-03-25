@@ -73,10 +73,14 @@ pub enum Statement {
     While{cond: Expression, body: Box<Statement>, lab: String},
     DoWhile{body: Box<Statement>, cond: Expression, lab: String},
     For{init: ForInit, cond: Option<Expression>, post: Option<Expression>, body: Box<Statement>, lab: String},
+    Switch{scrutinee: Expression, body: Box<Statement>, lab: String, cases:Vec<(Option<Expression>, String)>},
+    Case{expr: Expression, lab: String},
+    Default{lab: String},
     Break(String),
     Continue(String),
     Null,
 }
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
@@ -316,6 +320,25 @@ impl Parser {
                 let ret = Statement::Continue("".into());
                 self.expect(TokenType::Semicolon)?;
                 ret
+            },
+            TokenType::Switch => {
+                self.advance()?;
+                self.expect(TokenType::OpenParen)?;
+                let scrutinee = self.parse_expression(0)?;
+                self.expect(TokenType::CloseParen)?;
+                let body = self.parse_statement()?;
+                Statement::Switch{ scrutinee, body: Box::new(body), lab:"".into(), cases: Vec::new() }
+            },
+            TokenType::Case => {
+                self.advance()?;
+                let expr = self.parse_expression(0)?;
+                self.expect(TokenType::Colon)?;
+                Statement::Case{ expr, lab:"".into() }
+            },
+            TokenType::Default => {
+                self.advance()?;
+                self.expect(TokenType::Colon)?;
+                Statement::Default{lab:"".into()}
             },
             _ => {
                 let ret = Statement::Expression(self.parse_expression(0)?);

@@ -180,7 +180,33 @@ fn gen_inst_statement(statement: parser::Statement, instructions: &mut Vec<Poise
             }
             instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "start")));
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab, "break")));
-        }
+        },
+        parser::Statement::Switch { scrutinee, body, lab, cases } => {
+            let scr = emit_expression(scrutinee, instructions, count);
+            for case in cases.clone() {
+                if let (Some(value), clab) = case {
+                    let caseval = emit_expression(value, instructions, count);
+                    let cmp = count.new_var();
+                    instructions.push(PoiseInstruction::Binary { op: PoiseBinaryOp::Equal, src1: caseval, src2: scr.clone(), dst: cmp.clone() });
+                    instructions.push(PoiseInstruction::JumpIfNotZero { condition: cmp, identifier: count.loop_label_string(clab.clone(), "case") });
+                } 
+            }
+            for case in cases {
+                if let (None, clab) = case {
+                    instructions.push(PoiseInstruction::Jump(count.loop_label_string(clab.clone(), "default")));
+                } else {
+                    instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "break")));
+                }
+            }
+            gen_inst_statement(*body, instructions, count);
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "break")));
+        },
+        parser::Statement::Case { lab,.. } => {
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "case")));
+        }, 
+        parser::Statement::Default { lab } => {
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "default")));
+        },
         _ => todo!(),
     }
 }
