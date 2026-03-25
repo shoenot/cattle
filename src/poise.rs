@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::parser::{self, BlockItem};
 
 #[derive(Debug)]
@@ -73,6 +75,11 @@ impl TmpCount {
         self.label_counter += 1;
         name
     }
+
+    fn loop_label_string(&mut self, lab: String, labtype: &str) -> String {
+        let ret = format!("{}_{}", labtype, lab);
+        ret.to_string()
+    }
 }
 
 pub fn gen_poise(tree: parser::Program) -> PoiseProg {
@@ -135,6 +142,45 @@ fn gen_inst_statement(statement: parser::Statement, instructions: &mut Vec<Poise
         parser::Statement::Label(name) => instructions.push(PoiseInstruction::Label(name)),
         parser::Statement::Goto(name) => instructions.push(PoiseInstruction::Jump(name)),
         parser::Statement::Compound(block) => gen_inst_block(block, instructions, count),
+        parser::Statement::Break(lab) => instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab, "break"))),
+        parser::Statement::Continue(lab) => instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab, "cont"))),
+        parser::Statement::DoWhile { body, cond, lab } => {
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "start")));
+            gen_inst_statement(*body, instructions, count);
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
+            let res = emit_expression(cond, instructions, count);
+            instructions.push(PoiseInstruction::JumpIfNotZero { condition: res, identifier: count.loop_label_string(lab.clone(), "start") });
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab, "break")));
+            
+        },
+        parser::Statement::While { cond, body, lab }  => {
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
+            let res = emit_expression(cond, instructions, count);
+            instructions.push(PoiseInstruction::JumpIfZero { condition: res, identifier: count.loop_label_string(lab.clone(), "break") });
+            gen_inst_statement(*body, instructions, count);
+            instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "cont")));
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab, "break")));
+            
+        },
+        parser::Statement::For { init, cond, post, body, lab } => {
+            if let parser::ForInit::InitExp(Some(exp)) = init {
+                emit_expression(exp, instructions, count);
+            } else if let parser::ForInit::InitDec(dec) = init {
+                gen_inst_declaration(dec, instructions, count);
+            }
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "start")));
+            if let Some(cond) = cond {
+                let res = emit_expression(cond, instructions, count);
+                instructions.push(PoiseInstruction::JumpIfZero { condition: res, identifier: count.loop_label_string(lab.clone(), "break") });
+            }
+            gen_inst_statement(*body, instructions, count);
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
+            if let Some(post) = post {
+                emit_expression(post, instructions, count);
+            }
+            instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "start")));
+            instructions.push(PoiseInstruction::Label(count.loop_label_string(lab, "break")));
+        }
         _ => todo!(),
     }
 }
