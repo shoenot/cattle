@@ -31,12 +31,20 @@ fn loop_labeling_pass(program: &mut Program) -> Result<(), SemanticError> {
         loopstack: Vec::new(),
         switchstack: Vec::new(),
     };
-    assign_loop_labels(&mut program.function.body.items, &mut count)?;
+    for function in &mut program.functions {
+        if let Some(body) = function.body.as_mut() {
+            assign_loop_labels(&mut body.items, &mut count)?;
+        }
+    }
     Ok(())
 }
 
 fn switch_collection_pass(program: &mut Program) -> Result<(), SemanticError> {
-    block_collector(&mut program.function.body.items)?;
+    for function in &mut program.functions {
+        if let Some(body) = function.body.as_mut() {
+            block_collector(&mut body.items)?;
+        }
+    }
     Ok(())
 }
 

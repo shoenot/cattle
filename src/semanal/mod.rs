@@ -3,17 +3,21 @@ use std::fmt;
 
 use crate::parser::*;
 
-mod resvars;
-use resvars::variable_resolution_pass;
+mod res_idents;
+use res_idents::identifier_resolution_pass;
 
 mod labels;
 use labels::label_generation_pass;
+
+mod type_check;
+use type_check::type_checking_pass;
 
 #[derive(Debug)]
 pub enum SemanticError {
     UseBeforeDeclaration(String),
     InvalidLValue,
-    DoubleDeclaration,
+    DoubleDeclaration(String),
+    NestedFunctionDefinition(String),
     UndeclaredLabel(String),
     DuplicateLabel(String),
     BreakOutsideLoopOrSwitch,
@@ -23,6 +27,10 @@ pub enum SemanticError {
     DuplicateCase,
     DuplicateDefault,
     DecInCase,
+    IncompatibleFuncDeclaration(String),
+    FuncCalledWithWrongNumArgs(String),
+    VarCalledAsFunc(String),
+    FuncUsedAsVar(String),
 }
 
 impl fmt::Display for SemanticError {
@@ -30,7 +38,8 @@ impl fmt::Display for SemanticError {
         match self {
             SemanticError::UseBeforeDeclaration(n) => write!(f, "Used {} before it was declared", n),
             SemanticError::InvalidLValue => write!(f, "Invalid lvalue"),
-            SemanticError::DoubleDeclaration => write!(f, "Variable declared"),
+            SemanticError::DoubleDeclaration(n) => write!(f, "Duplicate declaration of {}", n),
+            SemanticError::NestedFunctionDefinition(n) => write!(f, "Nested declaration of {}", n),
             SemanticError::UndeclaredLabel(n) => write!(f, "Undeclared label {}", n),
             SemanticError::DuplicateLabel(n) => write!(f, "Duplicate label {}", n),
             SemanticError::BreakOutsideLoopOrSwitch => write!(f, "Break outside loop/switch"),
@@ -40,14 +49,19 @@ impl fmt::Display for SemanticError {
             SemanticError::DuplicateCase => write!(f, "Duplicate case"),
             SemanticError::DuplicateDefault => write!(f, "Duplicate label"),
             SemanticError::DecInCase => write!(f, "Dec in case"),
+            SemanticError::IncompatibleFuncDeclaration(n) => write!(f, "Incompatible Function Declaration {}", n),
+            SemanticError::FuncCalledWithWrongNumArgs(n) => write!(f, "Function {} called with wrong number of args", n),
+            SemanticError::VarCalledAsFunc(n) => write!(f, "Variable {} called as a function", n),
+            SemanticError::FuncUsedAsVar(n) => write!(f, "Function {} used as a variable", n),
         }
     }
 }
 
 impl std::error::Error for SemanticError {}
 
-pub fn semantic_analysis(program: &mut Program) -> Result<HashMap<String, (String, usize)>, SemanticError> {
-    let map = variable_resolution_pass(program)?;
+pub fn semantic_analysis(program: &mut Program) -> Result<HashMap<String, (String, usize, bool)>, SemanticError> {
+    let map = identifier_resolution_pass(program)?;
     label_generation_pass(program)?;
+    type_checking_pass(program)?;
     Ok(map)
 }

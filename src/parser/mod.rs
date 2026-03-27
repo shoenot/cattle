@@ -14,6 +14,8 @@ pub enum ParseError {
     ExpectedStatement(Span),
     ExpectedIdentifier(Span),
     ExpectedExpression(Span),
+    ExpectedVarDecl(Span),
+    ExpectedParam(Span),
     LabelWithoutStatement(Span),
 }
 
@@ -25,6 +27,8 @@ impl fmt::Display for ParseError {
             ParseError::ExpectedStatement(s) => write!(f, "Parse Error: expected statement!\nLine: {}, Col: {}", s.line_number, s.col),
             ParseError::ExpectedIdentifier(s) => write!(f, "Parse Error: expected identifier!\nLine: {}, Col: {}", s.line_number, s.col),
             ParseError::ExpectedExpression(s) => write!(f, "Parse Error: expected expression!\nLine: {}, Col: {}", s.line_number, s.col),
+            ParseError::ExpectedVarDecl(s) => write!(f, "Parse Error: expected variable declaration!\nLine: {}, Col: {}", s.line_number, s.col),
+            ParseError::ExpectedParam(s) => write!(f, "Parse Error: expected parameter!\nLine: {}, Col: {}", s.line_number, s.col),
             ParseError::LabelWithoutStatement(s) => write!(f, "Parse Error: label without statement!\nLine: {}, Col: {}", s.line_number, s.col),
         }
     }
@@ -68,8 +72,20 @@ impl Parser {
         }
     }
 
-    fn peek(&mut self) -> Result<&Token, ParseError> {
-        self.tokens.peek().ok_or(ParseError::UnexpectedEOF)
+    fn peek(&mut self) -> Option<&Token> {
+        self.tokens.peek()
+    }
+
+    fn next_token_is(&mut self, tokentype: TokenType) -> bool {
+        self.peek().map_or(false, |token| token.token_type == tokentype)
+    }
+
+    fn next_token_type(&mut self) -> Result<TokenType, ParseError> {
+        if let Some(token) = self.peek() {
+            Ok(token.token_type.clone())
+        } else {
+            Err(ParseError::UnexpectedEOF)
+        }
     }
 
     fn expect_ident(&mut self) -> Result<String, ParseError> {
@@ -89,48 +105,78 @@ impl Parser {
     }
 
     pub fn parse_program(&mut self) -> Result<Program, ParseError> {
-        let function = self.parse_function()?;
-        self.expect_eof()?;
-        Ok(Program {
-            function
-        })
-    }
-
-    fn parse_function(&mut self) -> Result<Function, ParseError> {
-        self.expect(TokenType::Int)?;
-        let identifier = self.expect_ident()?;
-        self.expect(TokenType::OpenParen)?;
-        self.expect(TokenType::Void)?;
-        self.expect(TokenType::CloseParen)?;
-        let body = self.parse_block()?;
-        Ok(Function {
-            identifier, body
-        })
-    }
-
-    fn parse_block(&mut self) -> Result<Block, ParseError> {
-        let mut blockitems = Vec::new();
-        self.expect(TokenType::OpenBrace)?;
-        while self.peek()?.token_type != TokenType::CloseBrace {
-            blockitems.push(self.parse_blockitem()?);
+        let mut functions = Vec::new();
+        while self.next_token_is(TokenType::Int) {
+            match self.parse_declaration()? {
+                Decl::FuncDecl(func) => functions.push(func),
+                Decl::VarDecl(_) => unimplemented!(),
+            }
         }
-        self.expect(TokenType::CloseBrace)?;
-        Ok(Block{ items: blockitems })
+        self.expect_eof()?;
+        Ok(Program { functions })
     }
 
-    fn parse_blockitem(&mut self) -> Result<BlockItem, ParseError> {
-        let item = match self.peek()?.token_type {
-            TokenType::Int => BlockItem::D(Decl::VarDecl(self.parse_var_declaration()?)),
-            _ => BlockItem::S(self.parse_statement()?),
-        };
-        Ok(item)
-    }
+    ////////////////////
+    /// DECLARATIONS ///
+    ////////////////////
 
-    fn parse_var_declaration(&mut self) -> Result<VarDeclaration, ParseError> {
+    pub fn parse_declaration(&mut self) -> Result<Decl, ParseError> {
         self.expect(TokenType::Int)?;
         let identifier = self.expect_ident()?;
+        let decl = match self.next_token_type()? {
+            TokenType::OpenParen => Decl::FuncDecl(self.parse_func_declaration(identifier)?),
+            _ => Decl::VarDecl(self.parse_var_declaration(identifier)?),
+        };
+        Ok(decl)
+    }
+
+    fn parse_func_declaration(&mut self, identifier: String) -> Result<FuncDeclaration, ParseError> {
+        let params = self.parse_func_params()?;
+        let mut body = None;
+        if self.next_token_is(TokenType::OpenBrace) {
+            body = Some(self.parse_block()?);
+        } else {
+            self.expect(TokenType::Semicolon)?;
+        }
+        Ok(FuncDeclaration { identifier, params, body }) 
+    }
+
+    fn parse_func_params(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect(TokenType::OpenParen)?;
+        let mut params_list = Vec::new();
+        if self.next_token_is(TokenType::Void) {
+            self.advance()?;
+            self.expect(TokenType::CloseParen)?;
+            return Ok(params_list)
+        }
+
+        while !self.next_token_is(TokenType::CloseParen) {
+            self.expect(TokenType::Int)?;
+            if let TokenType::Identifier(param) = self.advance()?.token_type {
+                params_list.push(param);
+            } else {
+                return Err(ParseError::ExpectedParam(self.current_span));
+            }
+
+            while self.next_token_is(TokenType::Comma) {
+                self.expect(TokenType::Comma)?;
+                self.expect(TokenType::Int)?;
+                if let TokenType::Identifier(param) = self.advance()?.token_type {
+                    params_list.push(param);
+                } else {
+                    return Err(ParseError::ExpectedParam(self.current_span));
+                }
+            }
+        
+        }
+
+        self.expect(TokenType::CloseParen)?;
+        Ok(params_list)
+    }
+
+    fn parse_var_declaration(&mut self, identifier: String) -> Result<VarDeclaration, ParseError> {
         let mut init = None;
-        if self.peek()?.token_type != TokenType::Semicolon {
+        if !self.next_token_is(TokenType::Semicolon) {
             self.expect(TokenType::Equal)?;
             init = Some(self.parse_expression(0)?);
         }
@@ -138,8 +184,34 @@ impl Parser {
         Ok(VarDeclaration{identifier, init})
     }
 
+    //////////////
+    /// BLOCKS ///
+    //////////////
+
+    fn parse_block(&mut self) -> Result<Block, ParseError> {
+        let mut blockitems = Vec::new();
+        self.expect(TokenType::OpenBrace)?;
+        while !self.next_token_is(TokenType::CloseBrace) {
+            blockitems.push(self.parse_blockitem()?);
+        }
+        self.expect(TokenType::CloseBrace)?;
+        Ok(Block{ items: blockitems })
+    }
+
+    fn parse_blockitem(&mut self) -> Result<BlockItem, ParseError> {
+        let item = match self.next_token_type()? {
+            TokenType::Int => BlockItem::D(self.parse_declaration()?),
+            _ => BlockItem::S(self.parse_statement()?),
+        };
+        Ok(item)
+    }
+
+    //////////////////
+    /// STATEMENTS ///
+    //////////////////
+
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let statement = match self.peek()?.token_type.clone() {
+        let statement = match self.next_token_type()? {
             TokenType::Semicolon => { 
                 let ret = Statement::Null;
                 self.expect(TokenType::Semicolon)?;
@@ -157,7 +229,7 @@ impl Parser {
                 let cond = self.parse_expression(0)?;
                 self.expect(TokenType::CloseParen)?;
                 let yes = self.parse_statement()?;
-                if self.peek()?.token_type == TokenType::Else { 
+                if self.next_token_is(TokenType::Else) { 
                     self.advance()?;
                     let no = self.parse_statement()?;
                     Statement::If(cond, Box::new(yes), Some(Box::new(no)))
@@ -166,18 +238,25 @@ impl Parser {
                 }
             },
             TokenType::Identifier(name) => {
-                self.advance()?;
-                if self.peek()?.token_type == TokenType::Colon {
+                let tok = self.advance()?;
+                if self.next_token_is(TokenType::Colon) {
                     self.expect(TokenType::Colon)?;
                     let body = self.parse_statement();
                     let body = match body {
                         Ok(st) => st,
                         Err(e) => match e {
-                            ParseError::ExpectedStatement(_) => return Err(e),
-                            _ => return Err(ParseError::LabelWithoutStatement(self.current_span)),
+                            ParseError::ExpectedStatement(_) => {
+                                return Err(ParseError::LabelWithoutStatement(self.current_span));
+                            },
+                            _ => return Err(e),
                         }
                     };
                     Statement::Label(name, Box::new(body))
+                } else if self.next_token_is(TokenType::OpenParen) {
+                    let mut expr = self.parse_factor(Some(tok))?;
+                    expr = self.parse_expression_cont(expr, 0)?;
+                    self.expect(TokenType::Semicolon)?;
+                    Statement::Expression(expr)
                 } else {
                     let mut expr = Expression::Var(name);
                     expr = self.check_postfix(expr)?;
@@ -264,9 +343,12 @@ impl Parser {
     fn parse_for_loop(&mut self) -> Result<Statement, ParseError> {
         self.advance()?;
         self.expect(TokenType::OpenParen)?;
-        let init = match self.peek()?.token_type {
+        let init = match self.next_token_type()? {
             TokenType::Int => {
-                let dec = self.parse_var_declaration()?;
+                let dec = match self.parse_declaration()? {
+                    Decl::VarDecl(v) => v,
+                    Decl::FuncDecl(_) => return Err(ParseError::ExpectedVarDecl(self.current_span)),
+                };
                 ForInit::InitDec(dec)
             },
             TokenType::Semicolon => {
@@ -281,13 +363,13 @@ impl Parser {
         };
 
         let mut cond = None;
-        if self.peek()?.token_type != TokenType::Semicolon {
+        if !self.next_token_is(TokenType::Semicolon) {
             cond = Some(self.parse_expression(0)?);
         } 
         self.expect(TokenType::Semicolon)?;
 
         let mut post = None;
-        if self.peek()?.token_type != TokenType::CloseParen {
+        if !self.next_token_is(TokenType::CloseParen) {
             post = Some(self.parse_expression(0)?);
         } 
         self.expect(TokenType::CloseParen)?;
@@ -297,8 +379,12 @@ impl Parser {
         Ok(Statement::For { init, cond, post, body, lab: "".into() })
     }
 
+    ///////////////////
+    /// EXPRESSIONS ///
+    ///////////////////
+    
     fn parse_expression(&mut self, min_prec: i32) -> Result<Expression, ParseError> {
-        let left = self.parse_factor()?;
+        let left = self.parse_factor(None)?;
         self.parse_expression_cont(left, min_prec)
     }
 
@@ -339,9 +425,12 @@ impl Parser {
         Ok(exp)
     }
 
-    fn parse_factor(&mut self) -> Result<Expression, ParseError> {
-        let token = self.advance()?;
-        let expr = match token.token_type {
+    fn parse_factor(&mut self, token: Option<Token>) -> Result<Expression, ParseError> {
+        let current_token = match token {
+            Some(t) => t, 
+            None => self.advance()?,
+        };
+        let expr = match current_token.token_type {
             TokenType::Constant(value) => Expression::Constant(value),
             TokenType::OpenParen => {
                 let expression = self.parse_expression(0)?;
@@ -351,17 +440,24 @@ impl Parser {
             TokenType::Exclamation => self.parse_unop(UnaryOp::Not)?,
             TokenType::Tilde => self.parse_unop(UnaryOp::Complement)?,
             TokenType::Minus => self.parse_unop(UnaryOp::Negate)?,
-            TokenType::Identifier(name) => Expression::Var(name),
+            TokenType::Identifier(name) => {
+                if self.next_token_is(TokenType::OpenParen) {
+                    let args = self.parse_func_args()?;
+                    Expression::FunctionCall(name, args)
+                } else {
+                    Expression::Var(name)
+                }
+            },
             TokenType::DoublePlus => {
-                let operand = self.parse_factor()?;
+                let operand = self.parse_factor(None)?;
                 Expression::PrefixIncrement(Box::new(operand))
             },
             TokenType::DoubleMinus => {
-                let operand = self.parse_factor()?;
+                let operand = self.parse_factor(None)?;
                 Expression::PrefixDecrement(Box::new(operand))
             },
             _ => {
-                eprintln!("{:#?}", token);
+                eprintln!("{:#?}", current_token);
                 return Err(ParseError::ExpectedExpression(self.current_span))
             }
         };
@@ -369,10 +465,28 @@ impl Parser {
         Ok(expr)
     }
 
+    fn parse_func_args(&mut self) -> Result<Vec<Expression>, ParseError> {
+        self.expect(TokenType::OpenParen)?;
+        let mut args = Vec::new();
+
+        while !self.next_token_is(TokenType::CloseParen) {
+            // Parse first arg 
+            args.push(self.parse_expression(0)?);
+
+            while self.next_token_is(TokenType::Comma) {
+                self.expect(TokenType::Comma)?;
+                args.push(self.parse_expression(0)?);
+            }
+        }
+
+        self.expect(TokenType::CloseParen)?;
+        Ok(args)
+    }
+
     fn check_postfix(&mut self, expr: Expression) -> Result<Expression, ParseError> {
         let mut expr = expr;
         loop {
-            match self.peek()?.token_type {
+            match self.next_token_type()? {
                 TokenType::DoublePlus => {
                     self.advance()?;
                     expr = Expression::PostfixIncrement(Box::new(expr.clone()));
@@ -387,12 +501,12 @@ impl Parser {
     }
 
     fn parse_unop(&mut self, op: UnaryOp) -> Result<Expression, ParseError> {
-        let operand = self.parse_factor()?;
+        let operand = self.parse_factor(None)?;
         Ok(Expression::Unary(op, Box::new(operand)))
     }
 
     fn peek_binop(&mut self) -> Result<Option<BinaryOp>, ParseError> {
-        match self.peek()?.token_type {
+        match self.next_token_type()? {
             TokenType::Plus => Ok(Some(BinaryOp::Add)),
             TokenType::Minus => Ok(Some(BinaryOp::Subtract)),
             TokenType::Asterisk => Ok(Some(BinaryOp::Multiply)),

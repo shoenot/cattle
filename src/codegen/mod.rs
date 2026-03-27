@@ -76,11 +76,11 @@ pub enum Condition {
     GE,
 }
 
-pub fn gen_program(tree: poise::PoiseProg) -> AsmProgram {
-    let mut function = gen_function(tree.function);
-    function = assign_stack_slots(function);
-    AsmProgram { function }
-}
+// pub fn gen_program(tree: poise::PoiseProg) -> AsmProgram {
+//     let mut function = gen_function(tree.functions);
+//     function = assign_stack_slots(function);
+//     AsmProgram { function }
+// }
 
 fn gen_function(func: poise::PoiseFunc) -> AsmFunction {
     let name = func.identifier;

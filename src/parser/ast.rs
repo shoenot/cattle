@@ -1,12 +1,6 @@
 #[derive(Debug)]
 pub struct Program {
-    pub function: Function,
-}
-
-#[derive(Debug)]
-pub struct Function {
-    pub identifier: String,
-    pub body: Block,
+    pub functions: Vec<FuncDeclaration>,
 }
 
 #[derive(Debug)]
@@ -23,6 +17,14 @@ pub enum BlockItem {
 #[derive(Debug)]
 pub enum Decl {
     VarDecl(VarDeclaration),
+    FuncDecl(FuncDeclaration),
+}
+
+#[derive(Debug)]
+pub struct FuncDeclaration {
+    pub identifier: String,
+    pub params: Vec<String>,
+    pub body: Option<Block>,
 }
 
 #[derive(Debug)]
@@ -70,6 +72,7 @@ pub enum Expression {
     PostfixIncrement(Box<Expression>),
     PrefixDecrement(Box<Expression>),
     PostfixDecrement(Box<Expression>),
+    FunctionCall(String, Vec<Expression>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
