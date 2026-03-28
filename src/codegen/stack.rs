@@ -21,8 +21,8 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
                 let dst = resolve_operand(dst, map, &mut offset);
                 match (&src, &dst) {
                     (Operand::Stack(_), Operand::Stack(_)) => {
-                        new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10)));
-                        new_instructions.push(AsmInstruction::Mov(Operand::Reg(Register::R10), dst));
+                        new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10, RegSize::Long)));
+                        new_instructions.push(AsmInstruction::Mov(Operand::Reg(Register::R10, RegSize::Long), dst));
                     },
                     _ => new_instructions.push(AsmInstruction::Mov(src, dst)),
                 }
@@ -30,8 +30,8 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
             AsmInstruction::Movb(src, dst) => {
                 let src = resolve_operand(src, map, &mut offset);
                 let dst = resolve_operand(dst, map, &mut offset);
-                new_instructions.push(AsmInstruction::Movb(src, Operand::Reg(Register::R10)));
-                new_instructions.push(AsmInstruction::Movb(Operand::Reg(Register::R10), dst));
+                new_instructions.push(AsmInstruction::Movb(src, Operand::Reg(Register::R10, RegSize::Byte)));
+                new_instructions.push(AsmInstruction::Movb(Operand::Reg(Register::R10, RegSize::Byte), dst));
             },
             AsmInstruction::Unary(op, dst) => new_instructions.push(
                 AsmInstruction::Unary(op, resolve_operand(dst, map, &mut offset))
@@ -43,8 +43,8 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
                     BinaryOp::Add | BinaryOp::Sub | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
                        match (&src, &dst) {
                            (Operand::Stack(_), Operand::Stack(_)) => {
-                               new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10)));
-                               new_instructions.push(AsmInstruction::Binary(op, Operand::Reg(Register::R10), dst));
+                               new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10, RegSize::Long)));
+                               new_instructions.push(AsmInstruction::Binary(op, Operand::Reg(Register::R10, RegSize::Long), dst));
                            },
                            _ => new_instructions.push(AsmInstruction::Binary(op, src, dst)),
                        }
@@ -52,9 +52,9 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
                     BinaryOp::Mult => {
                         match &dst {
                             Operand::Stack(_) => {
-                                new_instructions.push(AsmInstruction::Mov(dst.clone(), Operand::Reg(Register::R11)));
-                                new_instructions.push(AsmInstruction::Binary(op, src, Operand::Reg(Register::R11)));
-                                new_instructions.push(AsmInstruction::Mov(Operand::Reg(Register::R11), dst));
+                                new_instructions.push(AsmInstruction::Mov(dst.clone(), Operand::Reg(Register::R11, RegSize::Long)));
+                                new_instructions.push(AsmInstruction::Binary(op, src, Operand::Reg(Register::R11, RegSize::Long)));
+                                new_instructions.push(AsmInstruction::Mov(Operand::Reg(Register::R11, RegSize::Long), dst));
                             },
                            _ => new_instructions.push(AsmInstruction::Binary(op, src, dst)),
                         }
@@ -68,8 +68,8 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
                  let src = resolve_operand(src, map, &mut offset);
                  match &src {
                      Operand::Imm(_) => {
-                         new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10)));
-                         new_instructions.push(AsmInstruction::Idiv(Operand::Reg(Register::R10)));
+                         new_instructions.push(AsmInstruction::Mov(src, Operand::Reg(Register::R10, RegSize::Long)));
+                         new_instructions.push(AsmInstruction::Idiv(Operand::Reg(Register::R10, RegSize::Long)));
                      },
                      _ => new_instructions.push(AsmInstruction::Idiv(src)),
                  }
@@ -79,8 +79,8 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
                 let v2 = resolve_operand(v2, map, &mut offset);
                 match (&v1, &v2) {
                    (Operand::Stack(_), Operand::Stack(_)) | (_, Operand::Imm(_)) => {
-                       new_instructions.push(AsmInstruction::Mov(v2, Operand::Reg(Register::R11)));
-                       new_instructions.push(AsmInstruction::Cmp(v1, Operand::Reg(Register::R11)));
+                       new_instructions.push(AsmInstruction::Mov(v2, Operand::Reg(Register::R11, RegSize::Long)));
+                       new_instructions.push(AsmInstruction::Cmp(v1, Operand::Reg(Register::R11, RegSize::Long)));
                    },
                    _ => new_instructions.push(AsmInstruction::Cmp(v1, v2)),
                 }

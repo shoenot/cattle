@@ -57,7 +57,7 @@ pub enum BinaryOp {
 #[derive(Debug,Clone)]
 pub enum Operand {
     Imm(i32),
-    Reg(Register),
+    Reg(Register, RegSize),
     Pseudo(String),
     Stack(i32),
 }
@@ -67,13 +67,19 @@ pub enum Register {
     AX,
     CX,
     DX,
-    CL,
     DI,
     SI,
     R8,
     R9,
     R10,
     R11,
+}
+
+#[derive(Debug,Clone)]
+pub enum RegSize {
+    Byte = 0,
+    Long = 1,
+    Quad = 2,
 }
 
 #[derive(Debug)]
@@ -98,13 +104,16 @@ pub fn gen_program(tree: poise::PoiseProg) -> AsmProgram {
 
 fn copy_param(num: usize, param: String) -> AsmInstruction {
     match num {
-        0 => AsmInstruction::Mov(Operand::Reg(Register::DI), Operand::Pseudo(param)), 
-        1 => AsmInstruction::Mov(Operand::Reg(Register::SI), Operand::Pseudo(param)), 
-        2 => AsmInstruction::Mov(Operand::Reg(Register::DX), Operand::Pseudo(param)), 
-        3 => AsmInstruction::Mov(Operand::Reg(Register::CX), Operand::Pseudo(param)), 
-        4 => AsmInstruction::Mov(Operand::Reg(Register::R8), Operand::Pseudo(param)), 
-        5 => AsmInstruction::Mov(Operand::Reg(Register::R9), Operand::Pseudo(param)), 
-        _ => AsmInstruction::Mov(Operand::Stack(((num.saturating_sub(6))*8 + 16) as i32), Operand::Pseudo(param)),
+        0 => AsmInstruction::Mov(Operand::Reg(Register::DI, RegSize::Long), Operand::Pseudo(param)), 
+        1 => AsmInstruction::Mov(Operand::Reg(Register::SI, RegSize::Long), Operand::Pseudo(param)), 
+        2 => AsmInstruction::Mov(Operand::Reg(Register::DX, RegSize::Long), Operand::Pseudo(param)), 
+        3 => AsmInstruction::Mov(Operand::Reg(Register::CX, RegSize::Long), Operand::Pseudo(param)), 
+        4 => AsmInstruction::Mov(Operand::Reg(Register::R8, RegSize::Long), Operand::Pseudo(param)), 
+        5 => AsmInstruction::Mov(Operand::Reg(Register::R9, RegSize::Long), Operand::Pseudo(param)), 
+        _ => {
+            let offset = (num.saturating_sub(6) * 8) + 16;
+            AsmInstruction::Mov(Operand::Stack(offset as i32), Operand::Pseudo(param))
+        }
     }
 }
 
@@ -122,7 +131,7 @@ fn gen_instructions(instructions: Vec<poise::PoiseInstruction>, generated: &mut 
     for instruction in instructions {
         match instruction {
             poise::PoiseInstruction::Return(val) => {
-                generated.push(AsmInstruction::Mov(gen_operand(val), Operand::Reg(Register::AX)));
+                generated.push(AsmInstruction::Mov(gen_operand(val), Operand::Reg(Register::AX, RegSize::Long)));
                 generated.push(AsmInstruction::Ret);
             },
             poise::PoiseInstruction::Unary { op,src,dst } => {
@@ -169,7 +178,7 @@ fn gen_instructions(instructions: Vec<poise::PoiseInstruction>, generated: &mut 
                     generated.push(AsmInstruction::DeallocateStack(removal_bytes));
                 }
 
-                generated.push(AsmInstruction::Mov(Operand::Reg(Register::AX), gen_operand(dst)));
+                generated.push(AsmInstruction::Mov(Operand::Reg(Register::AX, RegSize::Long), gen_operand(dst)));
             }
         }
     }
@@ -177,20 +186,20 @@ fn gen_instructions(instructions: Vec<poise::PoiseInstruction>, generated: &mut 
 
 fn copy_arg(num: usize, arg: poise::PoiseVal, generated: &mut Vec<AsmInstruction>) {
     match num {
-        0 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::DI))), 
-        1 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::SI))), 
-        2 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::DX))), 
-        3 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::CX))), 
-        4 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::R8))), 
-        5 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::R9))), 
+        0 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::DI, RegSize::Long))), 
+        1 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::SI, RegSize::Long))), 
+        2 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::DX, RegSize::Long))), 
+        3 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::CX, RegSize::Long))), 
+        4 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::R8, RegSize::Long))), 
+        5 => generated.push(AsmInstruction::Mov(gen_operand(arg), Operand::Reg(Register::R9, RegSize::Long))), 
         _ => {
             let operand = gen_operand(arg);
             match operand {
                 Operand::Pseudo(_) | Operand::Stack(_)=> {
-                    generated.push(AsmInstruction::Mov(operand, Operand::Reg(Register::AX)));
-                    generated.push(AsmInstruction::Push(Operand::Reg(Register::AX)));
+                    generated.push(AsmInstruction::Mov(operand, Operand::Reg(Register::AX, RegSize::Long)));
+                    generated.push(AsmInstruction::Push(Operand::Reg(Register::AX, RegSize::Quad)));
                 }
-                Operand::Imm(_) | Operand::Reg(_) => generated.push(AsmInstruction::Push(operand)),
+                Operand::Imm(_) | Operand::Reg(_, _) => generated.push(AsmInstruction::Push(operand)),
             }
         },
     }
@@ -262,11 +271,11 @@ fn binary_handler(op: PoiseBinaryOp, src1: PoiseVal, src2: PoiseVal, dst: PoiseV
             generated.push(AsmInstruction::Binary(gen_binary(op), s2, d));
         },
         PoiseBinaryOp::Divide | PoiseBinaryOp::Remainder => {
-            generated.push(AsmInstruction::Mov(s1, Operand::Reg(Register::AX)));
-            generated.push(AsmInstruction::Mov(s2, Operand::Reg(Register::R10)));
+            generated.push(AsmInstruction::Mov(s1, Operand::Reg(Register::AX, RegSize::Long)));
+            generated.push(AsmInstruction::Mov(s2, Operand::Reg(Register::R10, RegSize::Long)));
             generated.push(AsmInstruction::Cdq);
-            generated.push(AsmInstruction::Idiv(Operand::Reg(Register::R10)));
-            generated.push(AsmInstruction::Mov(Operand::Reg(gen_division(op)), d));
+            generated.push(AsmInstruction::Idiv(Operand::Reg(Register::R10, RegSize::Long)));
+            generated.push(AsmInstruction::Mov(Operand::Reg(gen_division(op), RegSize::Long), d));
         },
         PoiseBinaryOp::LeftShift | PoiseBinaryOp::RightShift => {
             generated.push(AsmInstruction::Mov(s1, d.clone()));
@@ -275,9 +284,9 @@ fn binary_handler(op: PoiseBinaryOp, src1: PoiseVal, src2: PoiseVal, dst: PoiseV
                     generated.push(AsmInstruction::Binary(gen_binary(op), s2, d));
                 },
                 _ => {
-                    generated.push(AsmInstruction::Mov(s2, Operand::Reg(Register::R10)));
-                    generated.push(AsmInstruction::Movb(Operand::Reg(Register::R10), Operand::Reg(Register::CX)));
-                    generated.push(AsmInstruction::Binary(gen_binary(op), Operand::Reg(Register::CL), d));
+                    generated.push(AsmInstruction::Mov(s2, Operand::Reg(Register::R10, RegSize::Long)));
+                    generated.push(AsmInstruction::Movb(Operand::Reg(Register::R10, RegSize::Byte), Operand::Reg(Register::CX, RegSize::Byte)));
+                    generated.push(AsmInstruction::Binary(gen_binary(op), Operand::Reg(Register::CX, RegSize::Byte), d));
                 },
             }
         }
