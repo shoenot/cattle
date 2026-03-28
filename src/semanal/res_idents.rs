@@ -3,14 +3,16 @@ use std::collections::hash_map::HashMap;
 use crate::parser::*;
 use super::SemanticError;
 
+// (mangled_name, has_linkage)
+type IdentMap = HashMap<String, (String, bool)>;
+
 struct Counter {
     count: usize,
-    current_block: usize,
 }
 
 impl Counter {
     fn namegen(&mut self, name: &str) -> String {
-        let new = format!("{}.{}_{}", name, self.count, self.current_block);
+        let new = format!("{}.{}", name, self.count);
         self.count += 1;
         new
     }
@@ -21,27 +23,29 @@ impl Counter {
 }
 
 fn resolve_block(block: &mut Block,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
+    outer: &IdentMap,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
-    counter.current_block += 1;
+
     for blockitem in &mut block.items {
         match blockitem {
             BlockItem::S(s) => resolve_statement(s, ident_map, label_map, counter)?,
-            BlockItem::D(Decl::VarDecl(d)) => resolve_var_declaration(d, ident_map, counter)?,
-            BlockItem::D(Decl::FuncDecl(f)) => resolve_func_declaration(f, ident_map, label_map, counter)?,
+            BlockItem::D(Decl::VarDecl(d)) => resolve_var_declaration(d, ident_map, outer, counter)?,
+            BlockItem::D(Decl::FuncDecl(f)) => resolve_func_declaration(f, ident_map, outer, label_map, counter)?,
         }
     }
-    counter.current_block -= 1;
     Ok(())
 }
 
 fn resolve_program_idents(program: &mut Program,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
+    // at the top level there is no outer scope
+    let outer = ident_map.clone();
     for function in &mut program.functions {
-        resolve_func_declaration(function, ident_map, label_map, counter)?;
+        resolve_func_declaration(function, ident_map, &outer, label_map, counter)?;
     }
     Ok(())
 }
@@ -84,7 +88,7 @@ fn process_goto(name: &mut String,
 }
 
 fn resolve_statement(statement: &mut Statement,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
     match statement {
@@ -104,7 +108,8 @@ fn resolve_statement(statement: &mut Statement,
         Statement::Goto(name) => process_goto(name, label_map, counter)?,
         Statement::Compound(block) => {
             let mut new_map = ident_map.clone();
-            resolve_block(block, &mut new_map, label_map, counter)?;
+            let outer = ident_map.clone();
+            resolve_block(block, &mut new_map, &outer, label_map, counter)?;
         },
         Statement::While { cond, body, lab:_ } |
         Statement::DoWhile { body, cond, lab:_ } => {
@@ -113,12 +118,12 @@ fn resolve_statement(statement: &mut Statement,
         },
         Statement::For { init, cond, post, body, lab:_ } => {
             let mut new_map = ident_map.clone();
-            counter.current_block += 1;
-            resolve_for_init(init, &mut new_map, counter)?;
+            // snapshot before any for-init declarations
+            let outer = new_map.clone();
+            resolve_for_init(init, &mut new_map, &outer, counter)?;
             if let Some(cond) = cond { resolve_expression(cond, &mut new_map, counter)?; }
             if let Some(post) = post { resolve_expression(post, &mut new_map, counter)?; }
             resolve_statement(body, &mut new_map, label_map, counter)?;
-            counter.current_block -= 1;
         },
         Statement::Switch { scrutinee, body, .. } => {
             resolve_expression(scrutinee, ident_map, counter)?;
@@ -137,17 +142,18 @@ fn resolve_statement(statement: &mut Statement,
 }
 
 fn resolve_var_declaration(declaration: &mut VarDeclaration,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
+    outer: &IdentMap,
     counter: &mut Counter) -> Result<(), SemanticError> {
 
-    if let Some((name, blk, _)) = ident_map.get(&declaration.identifier) {
-        if *blk == counter.current_block {
-            return Err(SemanticError::DoubleDeclaration(name.to_string()))
-        }
+    // duplicate if present in current map but NOT in outer snapshot
+    if ident_map.contains_key(&declaration.identifier) && !outer.contains_key(&declaration.identifier) {
+        let name = ident_map[&declaration.identifier].0.clone();
+        return Err(SemanticError::DoubleDeclaration(name));
     }
 
     let newname = counter.namegen(&declaration.identifier);
-    ident_map.insert(declaration.identifier.clone(), (newname.clone(), counter.current_block, false));
+    ident_map.insert(declaration.identifier.clone(), (newname.clone(), false));
     declaration.identifier = newname;
 
     match &mut declaration.init {
@@ -160,61 +166,63 @@ fn resolve_var_declaration(declaration: &mut VarDeclaration,
 }
 
 fn resolve_func_declaration(declaration: &mut FuncDeclaration,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
+    outer: &IdentMap,
     label_map: &mut HashMap<String, (String, bool)>,
     counter: &mut Counter) -> Result<(), SemanticError> {
 
-    if counter.current_block > 0 {
+    if !outer.is_empty() {
         if declaration.body.is_some() {
             return Err(SemanticError::NestedFunctionDefinition(declaration.identifier.to_string()));
         }
     }
 
-    if let Some((name, blk, linkage)) = ident_map.get(&declaration.identifier) {
-        if (*blk == counter.current_block) && !*linkage {
-            return Err(SemanticError::DoubleDeclaration(name.to_string()))
+    if let Some((name, linkage)) = ident_map.get(&declaration.identifier) {
+        if !outer.contains_key(&declaration.identifier) && !*linkage {
+            return Err(SemanticError::DoubleDeclaration(name.to_string()));
         }
     }
     
-    ident_map.insert(declaration.identifier.clone(), (declaration.identifier.clone(), counter.current_block, true));
+    ident_map.insert(declaration.identifier.clone(), (declaration.identifier.clone(), true));
     
     let mut inner_map = ident_map.clone();
+    let param_outer = inner_map.clone();
     let mut new_params = Vec::new();
     for param in &declaration.params {
-        new_params.push(resolve_parameter(param, &mut inner_map, counter)?);
+        new_params.push(resolve_parameter(param, &mut inner_map, &param_outer, counter)?);
     }
     declaration.params = new_params;
 
     match &mut declaration.body {
         None => return Ok(()),
         Some(e) => {
-            resolve_block(e, &mut inner_map, label_map, counter)?;
+            resolve_block(e, &mut inner_map, &param_outer, label_map, counter)?;
             Ok(())
         },
     }
 }
 
 fn resolve_parameter(param: &String,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &mut IdentMap,
+    outer: &IdentMap,
     counter: &mut Counter) -> Result<String, SemanticError> {
-    // add 1 because parameters are the same scope as function body 
-    if let Some((name, blk, _)) = ident_map.get(param) {
-        if *blk == counter.current_block + 1 {
-            return Err(SemanticError::DoubleDeclaration(name.to_string()))
-        }
+    // duplicate param if it's in the current map but not in the pre-param snapshot
+    if ident_map.contains_key(param) && !outer.contains_key(param) {
+        let name = ident_map[param].0.clone();
+        return Err(SemanticError::DoubleDeclaration(name));
     }
 
-    let newname = counter.namegen(&param);
-    ident_map.insert(param.to_string(), (newname.clone(), counter.current_block + 1, false));
+    let newname = counter.namegen(param);
+    ident_map.insert(param.to_string(), (newname.clone(), false));
     Ok(newname)
 }
 
 fn resolve_expression(expression: &mut Expression,
-    ident_map: &mut HashMap<String, (String, usize, bool)>,
+    ident_map: &IdentMap,
     counter: &mut Counter) -> Result<(), SemanticError> {
     match expression {
         Expression::Var(x) => {
-            if let Some((name, _, _)) = ident_map.get(x) {
+            if let Some((name, _)) = ident_map.get(x) {
                 *x = name.into();
             } else {
                 return Err(SemanticError::UseBeforeDeclaration(x.clone()));
@@ -250,7 +258,7 @@ fn resolve_expression(expression: &mut Expression,
         },
         Expression::Constant(_) => return Ok(()),
         Expression::FunctionCall(name, args) => {
-            if let Some((new_name, _, _)) = ident_map.get(name) {
+            if let Some((new_name, _)) = ident_map.get(name) {
                 *name = new_name.into();
                 for arg in args {
                     resolve_expression(arg, ident_map, counter)?;
@@ -263,9 +271,12 @@ fn resolve_expression(expression: &mut Expression,
     Ok(())
 }
 
-fn resolve_for_init(init: &mut ForInit, ident_map: &mut HashMap<String, (String, usize, bool)>, counter: &mut Counter) -> Result<(), SemanticError> {
+fn resolve_for_init(init: &mut ForInit,
+    ident_map: &mut IdentMap,
+    outer: &IdentMap,
+    counter: &mut Counter) -> Result<(), SemanticError> {
     if let ForInit::InitDec(dec) = init {
-        resolve_var_declaration(dec, ident_map, counter)?;
+        resolve_var_declaration(dec, ident_map, outer, counter)?;
     } else if let ForInit::InitExp(Some(exp)) = init {
         resolve_expression(exp, ident_map, counter)?;
     }
@@ -321,12 +332,11 @@ fn eval_constant(expr: &Expression) -> Option<i32> {
     }
 }
 
-pub fn identifier_resolution_pass(program: &mut Program) -> Result<HashMap<String, (String, usize, bool)>, SemanticError>{
+pub fn identifier_resolution_pass(program: &mut Program) -> Result<IdentMap, SemanticError>{
     let mut ident_map = HashMap::new();
     let mut label_map = HashMap::new();
-    let mut counter = Counter{count: 0, current_block: 0};
+    let mut counter = Counter { count: 0 };
     resolve_program_idents(program, &mut ident_map, &mut label_map, &mut counter)?;
     check_undeclared_label(label_map)?;
     Ok(ident_map)
-} 
-
+}

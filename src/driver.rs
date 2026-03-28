@@ -66,7 +66,7 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, Box<dyn Error>> {
     Ok(program)
 }
 
-fn run_semanal(program: &mut Program, symbols: &mut HashMap<String, Symbol>) -> Result<HashMap<String, (String, usize, bool)>, Box<dyn Error>> {
+fn run_semanal(program: &mut Program, symbols: &mut HashMap<String, Symbol>) -> Result<HashMap<String, (String, bool)>, Box<dyn Error>> {
     let var_map = semantic_analysis(program, symbols)?;
     Ok(var_map)
 }
