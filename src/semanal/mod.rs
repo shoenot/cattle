@@ -62,12 +62,6 @@ impl fmt::Display for SemanticError {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Type {
-    Int,
-    FuncType(usize),
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
     pub ident: String,

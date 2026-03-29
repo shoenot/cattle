@@ -57,4 +57,6 @@ pub enum TokenType {
     Switch,
     Case,
     Default,
+    Static,
+    Extern,
 }

@@ -1,6 +1,6 @@
 #[derive(Debug)]
 pub struct Program {
-    pub functions: Vec<FuncDeclaration>,
+    pub declarations: Vec<Decl>,
 }
 
 #[derive(Debug)]
@@ -25,12 +25,20 @@ pub struct FuncDeclaration {
     pub identifier: String,
     pub params: Vec<String>,
     pub body: Option<Block>,
+    pub storage: Option<StorageClass>,
 }
 
 #[derive(Debug)]
 pub struct VarDeclaration {
     pub identifier: String,
     pub init: Option<Expression>,
+    pub storage: Option<StorageClass>,
+}
+
+#[derive(Debug, Clone)]
+pub enum StorageClass {
+    Static,
+    Extern,
 }
 
 // For loop initiator
@@ -106,3 +114,10 @@ pub enum BinaryOp {
     OpSet(Box<BinaryOp>),
     Ternary,
 }
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum Type {
+    Int,
+    FuncType(usize),
+}
+
