@@ -3,8 +3,8 @@ use std::fmt;
 
 use crate::parser::*;
 
-mod res_idents;
-use res_idents::identifier_resolution_pass;
+mod resolve_idents;
+use resolve_idents::identifier_resolution_pass;
 
 mod labels;
 use labels::label_generation_pass;
@@ -55,12 +55,6 @@ impl fmt::Display for SemanticError {
             SemanticError::FuncUsedAsVar(n) => write!(f, "Function {} used as a variable", n),
         }
     }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum Type {
-    Int,
-    FuncType(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]

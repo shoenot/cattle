@@ -13,7 +13,6 @@ pub struct AsmProgram {
 pub struct AsmFunction {
     pub name: String,
     pub body: Vec<AsmInstruction>,
-    pub stack: i32,
 }
 
 #[derive(Debug)]
@@ -124,7 +123,7 @@ fn gen_function(func: poise::PoiseFunc) -> AsmFunction {
         .enumerate()
         .for_each(|(num , param)| generated.push(copy_param(num, param.into())));
     gen_instructions(func.body, &mut generated);
-    AsmFunction { name, body: generated, stack: 0 }
+    AsmFunction { name, body: generated }
 }
 
 fn gen_instructions(instructions: Vec<poise::PoiseInstruction>, generated: &mut Vec<AsmInstruction>) {

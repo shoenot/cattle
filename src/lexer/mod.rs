@@ -185,6 +185,8 @@ impl Tokenizer {
             "switch" => TokenType::Switch,
             "case" => TokenType::Case,
             "default" => TokenType::Default,
+            "static" => TokenType::Static,
+            "extern" => TokenType::Extern,
             _ => return None,
         };
 

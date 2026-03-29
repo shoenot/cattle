@@ -107,7 +107,7 @@ fn gen_inst_block(block: &parser::Block, instructions: &mut Vec<PoiseInstruction
         match blockitem {
             parser::BlockItem::S(s) => gen_inst_statement(s, instructions, count),
             parser::BlockItem::D(parser::Decl::VarDecl(d)) => gen_inst_var_declaration(d, instructions, count),
-            parser::BlockItem::D(parser::Decl::FuncDecl(f)) => {},
+            parser::BlockItem::D(parser::Decl::FuncDecl(_)) => {},
         }
     }
 }

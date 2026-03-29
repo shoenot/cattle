@@ -98,7 +98,7 @@ fn assign_func_slots(func: AsmFunction, map: &mut HashMap<String, i32>) -> AsmFu
     }
     let offset = (offset.abs() as u32).next_multiple_of(16) as i32;
     new_instructions.insert(0, AsmInstruction::AllocateStack(offset));
-    AsmFunction { name: func.name, body: new_instructions, stack: offset }
+    AsmFunction { name: func.name, body: new_instructions }
 }
 
 fn resolve_operand(op: Operand, map: &mut HashMap<String, i32>, offset: &mut i32) -> Operand {

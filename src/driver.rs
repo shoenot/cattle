@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::codegen::{AsmProgram, gen_program};
 use crate::lexer::{Token, Tokenizer};
 use crate::parser::{Parser, Program};
-use crate::semanal::{semantic_analysis, Type, Symbol};
+use crate::semanal::{semantic_analysis, Symbol};
 use crate::poise::{PoiseProg, gen_poise};
 use crate::emit::emit_program;
 
