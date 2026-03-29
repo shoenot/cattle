@@ -1,4 +1,5 @@
 use super::*;
+use visitor_trait::*;
 
 struct LoopLabeler {
     counter: usize,
