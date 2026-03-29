@@ -19,7 +19,6 @@ impl LoopCounter {
 }
 
 pub fn label_generation_pass(program: &mut Program) -> Result<(), SemanticError> {
-    loop_labeling_pass(program)?;
     switch_collection_pass(program)?;
     Ok(())
 }
@@ -31,18 +30,24 @@ fn loop_labeling_pass(program: &mut Program) -> Result<(), SemanticError> {
         loopstack: Vec::new(),
         switchstack: Vec::new(),
     };
-    for function in &mut program.functions {
-        if let Some(body) = function.body.as_mut() {
-            assign_loop_labels(&mut body.items, &mut count)?;
+    for dec in &mut program.declarations {
+        match dec {
+            Decl::FuncDecl(f) => if let Some(body) = f.body.as_mut() {
+                assign_loop_labels(&mut body.items, &mut count)?;
+            },
+            _ => {},
         }
     }
     Ok(())
 }
 
 fn switch_collection_pass(program: &mut Program) -> Result<(), SemanticError> {
-    for function in &mut program.functions {
-        if let Some(body) = function.body.as_mut() {
-            block_collector(&mut body.items)?;
+    for dec in &mut program.declarations {
+        match dec {
+            Decl::FuncDecl(f) => if let Some(body) = f.body.as_mut() {
+                block_collector(&mut body.items)?;
+            },
+            _ => {},
         }
     }
     Ok(())

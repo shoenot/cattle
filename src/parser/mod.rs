@@ -122,40 +122,47 @@ impl Parser {
     ////////////////////
 
     pub fn parse_declaration(&mut self) -> Result<Decl, ParseError> {
-        self.expect(TokenType::Int)?;
-        let (dtype, storage_class) = self.parse_specifiers()?;
+        let (dtype, storage) = self.parse_specifiers()?;
         let identifier = self.expect_ident()?;
         let decl = match self.next_token_type()? {
-            TokenType::OpenParen => Decl::FuncDecl(self.parse_func_declaration(identifier)?),
-            _ => Decl::VarDecl(self.parse_var_declaration(identifier)?),
+            TokenType::OpenParen => Decl::FuncDecl(self.parse_func_declaration(identifier, dtype, storage)?),
+            _ => Decl::VarDecl(self.parse_var_declaration(identifier, dtype, storage)?),
         };
         Ok(decl)
     }
 
     fn parse_specifiers(&mut self) -> Result<(Type, Option<StorageClass>), ParseError> {
         let mut storage = None;
-        let mut storage_classes = vec![];
-        let mut types = vec![];
+        let mut type_option = None;
         loop {
             if let TokenType::Identifier(_) = self.next_token_type()? {
                 break;
             } else {
                 match self.advance()?.token_type {
-                    TokenType::Int => types.push(Type::Int),
-                    TokenType::Static => storage_classes.push(StorageClass::Static),
-                    TokenType::Extern => storage_classes.push(StorageClass::Extern),
+                    TokenType::Int => { 
+                        if type_option.is_none() { type_option = Some(Type::Int) } else 
+                        { return Err(ParseError::InvalidTypes(self.current_span)) }
+                    },
+                    TokenType::Static => { 
+                        if storage.is_none() { storage = Some(StorageClass::Static) } else 
+                        { return Err(ParseError::InvalidStorageClasses(self.current_span)) }
+                    },
+                    TokenType::Extern => { 
+                        if storage.is_none() { storage = Some(StorageClass::Extern) } else 
+                        { return Err(ParseError::InvalidStorageClasses(self.current_span)) }
+                    },
                     other => return Err(ParseError::UnexpectedToken(other, self.current_span)),
                 }
             }
         }
-        if types.len() != 1 { return Err(ParseError::InvalidTypes(self.current_span)) }
-        if storage_classes.len() > 1 { return Err(ParseError::InvalidStorageClasses(self.current_span)) }
-        if storage_classes.len() > 0 { storage = Some(storage_classes[0]) }
-        Ok((types[0], storage))
+        if type_option.is_none() { return Err(ParseError::InvalidTypes(self.current_span)) }
+        let dtype = type_option.unwrap();
+        Ok((dtype, storage))
     }
 
 
-    fn parse_func_declaration(&mut self, identifier: String) -> Result<FuncDeclaration, ParseError> {
+    fn parse_func_declaration(&mut self, identifier: String, _return_type: Type, storage: Option<StorageClass>) 
+        -> Result<FuncDeclaration, ParseError> {
         let params = self.parse_func_params()?;
         let mut body = None;
         if self.next_token_is(TokenType::OpenBrace) {
@@ -163,7 +170,7 @@ impl Parser {
         } else {
             self.expect(TokenType::Semicolon)?;
         }
-        Ok(FuncDeclaration { identifier, params, body }) 
+        Ok(FuncDeclaration { identifier, params, body, storage }) 
     }
 
     fn parse_func_params(&mut self) -> Result<Vec<String>, ParseError> {
@@ -199,14 +206,15 @@ impl Parser {
         Ok(params_list)
     }
 
-    fn parse_var_declaration(&mut self, identifier: String) -> Result<VarDeclaration, ParseError> {
+    fn parse_var_declaration(&mut self, identifier: String, _dtype: Type, storage: Option<StorageClass>) 
+        -> Result<VarDeclaration, ParseError> {
         let mut init = None;
         if !self.next_token_is(TokenType::Semicolon) {
             self.expect(TokenType::Equal)?;
             init = Some(self.parse_expression(0)?);
         }
         self.expect(TokenType::Semicolon)?;
-        Ok(VarDeclaration{identifier, init})
+        Ok(VarDeclaration{identifier, init, storage})
     }
 
     //////////////

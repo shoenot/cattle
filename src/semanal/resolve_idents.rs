@@ -22,6 +22,15 @@ impl Counter {
     }
 }
 
+pub fn identifier_resolution_pass(program: &mut Program) -> Result<IdentMap, SemanticError>{
+    let mut ident_map = HashMap::new();
+    let mut label_map = HashMap::new();
+    let mut counter = Counter { count: 0 };
+    resolve_program_idents(program, &mut ident_map, &mut label_map, &mut counter)?;
+    check_undeclared_label(label_map)?;
+    Ok(ident_map)
+}
+
 fn resolve_block(block: &mut Block,
     ident_map: &mut IdentMap,
     outer: &IdentMap,
@@ -44,8 +53,11 @@ fn resolve_program_idents(program: &mut Program,
     counter: &mut Counter) -> Result<(), SemanticError> {
     // at the top level there is no outer scope
     let outer = ident_map.clone();
-    for function in &mut program.functions {
-        resolve_func_declaration(function, ident_map, &outer, label_map, counter)?;
+    for decl in &mut program.declarations {
+        match decl {
+            Decl::FuncDecl(f) => resolve_func_declaration(f, ident_map, &outer, label_map, counter)?,
+            Decl::VarDecl(v) => resolve_var_declaration(v, ident_map, &outer, counter)?,
+        }
     }
     Ok(())
 }
@@ -332,11 +344,3 @@ fn eval_constant(expr: &Expression) -> Option<i32> {
     }
 }
 
-pub fn identifier_resolution_pass(program: &mut Program) -> Result<IdentMap, SemanticError>{
-    let mut ident_map = HashMap::new();
-    let mut label_map = HashMap::new();
-    let mut counter = Counter { count: 0 };
-    resolve_program_idents(program, &mut ident_map, &mut label_map, &mut counter)?;
-    check_undeclared_label(label_map)?;
-    Ok(ident_map)
-}

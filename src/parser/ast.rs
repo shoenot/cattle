@@ -25,17 +25,17 @@ pub struct FuncDeclaration {
     pub identifier: String,
     pub params: Vec<String>,
     pub body: Option<Block>,
-    pub store: Option<StorageClass>,
+    pub storage: Option<StorageClass>,
 }
 
 #[derive(Debug)]
 pub struct VarDeclaration {
     pub identifier: String,
     pub init: Option<Expression>,
-    pub store: Option<StorageClass>,
+    pub storage: Option<StorageClass>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StorageClass {
     Static,
     Extern,

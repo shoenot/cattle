@@ -100,24 +100,16 @@ pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<PathBuf, 
 
     let mut parsed = run_parser(lexed)?;
     if args.parse {
-        for function in parsed.functions {
-            if function.body.is_some() {
-                for item in function.body.unwrap().items {
-                    println!("{:?}", item);
-                }
-            }
+        for decl in parsed.declarations {
+            println!("{:#?}", decl);
         }
         std::process::exit(0);
     }
 
     let var_map = run_semanal(&mut parsed, &mut symbols)?;
     if args.validate {
-        for function in parsed.functions {
-            if function.body.is_some() {
-                for item in function.body.unwrap().items {
-                    println!("{:?}", item);
-                }
-            }
+        for decl in parsed.declarations {
+            println!("{:#?}", decl);
         }
         println!("{:#?}", var_map);
         std::process::exit(0);

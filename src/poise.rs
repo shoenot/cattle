@@ -12,7 +12,7 @@ pub struct PoiseFunc {
     pub body: Vec<PoiseInstruction>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PoiseInstruction {
     Return(PoiseVal),
     Unary{op: PoiseUnaryOp, src: PoiseVal, dst: PoiseVal},
@@ -31,14 +31,14 @@ pub enum PoiseVal {
     Variable(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PoiseUnaryOp {
     Complement,
     Negate,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum PoiseBinaryOp {
     Add,
     Subtract,
@@ -84,22 +84,26 @@ impl TmpCount {
 
 pub fn gen_poise(tree: &parser::Program) -> PoiseProg {
     let mut count = TmpCount{var_counter: 0, label_counter: 0};
+    let mut instructions = Vec::new();
     let mut functions = Vec::new();
-    for function in &tree.functions {
-        if function.body.is_some() {
-            functions.push(gen_poisefunc(function, &mut count));
+    let mut globals = Vec::new();
+    for decl in &tree.declarations {
+        match decl {
+            parser::Decl::FuncDecl(f) => if f.body.is_some() {
+                functions.push(gen_poisefunc(f, &mut instructions, &mut count));
+            },
+            parser::Decl::VarDecl(v) => globals.push(gen_inst_var_declaration(v, &mut instructions, &mut count)),
         }
     }
     PoiseProg { functions }
 }
 
-fn gen_poisefunc(func: &parser::FuncDeclaration, count: &mut TmpCount) -> PoiseFunc {
-    let mut instructions = Vec::new();
+fn gen_poisefunc(func: &parser::FuncDeclaration, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) -> PoiseFunc {
     let name = func.identifier.clone();
     let params = func.params.clone();
-    gen_inst_block(func.body.as_ref().unwrap(), &mut instructions, count);
+    gen_inst_block(func.body.as_ref().unwrap(), instructions, count);
     instructions.push(PoiseInstruction::Return(PoiseVal::Constant(0)));
-    PoiseFunc{ identifier: name, params, body: instructions }
+    PoiseFunc{ identifier: name, params, body: instructions.to_vec() }
 }
 
 fn gen_inst_block(block: &parser::Block, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {

@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use super::*;
 
 pub fn type_checking_pass(program: &mut Program, symbols: &mut HashMap<String, Symbol>) -> Result<(), SemanticError> {
-    for function in &mut program.functions {
-        check_func_decl(function, symbols)?;
+    for decl in &mut program.declarations {
+        match decl {
+            Decl::FuncDecl(f) => check_func_decl(f, symbols)?,
+            Decl::VarDecl(v) => check_var_decl(v, symbols)?,
+        }
     }
     Ok(())
 }
