@@ -19,7 +19,6 @@ impl LoopCounter {
 }
 
 pub fn label_generation_pass(program: &mut Program) -> Result<(), SemanticError> {
-    loop_labeling_pass(program)?;
     switch_collection_pass(program)?;
     Ok(())
 }
