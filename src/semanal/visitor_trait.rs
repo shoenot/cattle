@@ -31,8 +31,8 @@ pub trait Visitor {
 }
 
 pub fn walk_program<V: Visitor + ?Sized>(v: &mut V, program: &mut Program) -> Result<(), SemanticError> {
-    for function in &mut program.functions {
-        v.visit_func_decl(function)?;
+    for decl in &mut program.declarations {
+        v.visit_declaration(decl)?;
     }
     Ok(())
 }
