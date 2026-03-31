@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use super::*;
 use visitor_trait::*;
 
@@ -26,16 +25,8 @@ impl IdentAttrs {
     }
 }
 
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Symbol {
-    pub ident: String,
-    pub datatype: Type,
-    pub attrs: IdentAttrs,
-}
-
 struct TypeChecker<'a> {
-    symbols: &'a mut HashMap<String, Symbol>,
+    symbols: &'a mut SymbolTable,
     scope_depth: usize,
 }
 
@@ -217,7 +208,7 @@ impl<'a> Visitor for TypeChecker<'a> {
     }
 }
 
-pub fn type_checking_pass(program: &mut Program, symbols: &mut HashMap<String, Symbol>) -> Result<(), SemanticError> {
+pub fn type_checking_pass(program: &mut Program, symbols: &mut SymbolTable) -> Result<(), SemanticError> {
     let mut checker = TypeChecker { symbols, scope_depth: 0 };
     checker.visit_program(program)
 }

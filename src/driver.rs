@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use crate::codegen::{AsmProgram, gen_program};
 use crate::lexer::{Token, Tokenizer};
 use crate::parser::{Parser, Program};
-use crate::semanal::{semantic_analysis, Symbol, MapEntry};
+use crate::semanal::{MapEntry, Symbol, SymbolTable, semantic_analysis};
 use crate::poise::{PoiseProg, gen_poise};
 use crate::emit::emit_program;
 
@@ -66,17 +66,17 @@ fn run_parser(tokens: Vec<Token>) -> Result<Program, Box<dyn Error>> {
     Ok(program)
 }
 
-fn run_semanal(program: &mut Program, symbols: &mut HashMap<String, Symbol>) -> Result<HashMap<String, MapEntry>, Box<dyn Error>> {
+fn run_semanal(program: &mut Program, symbols: &mut SymbolTable) -> Result<HashMap<String, MapEntry>, Box<dyn Error>> {
     let var_map = semantic_analysis(program, symbols)?;
     Ok(var_map)
 }
 
-fn run_poise(program: Program, symbols: &mut HashMap<String, Symbol>) -> PoiseProg {
+fn run_poise(program: Program, symbols: &SymbolTable) -> PoiseProg {
     gen_poise(&program, symbols)
 }
 
-fn run_codegen(program: PoiseProg) -> AsmProgram {
-    gen_program(program)
+fn run_codegen(program: PoiseProg, symbols: &SymbolTable) -> AsmProgram {
+    gen_program(program, symbols)
 }
 
 
@@ -115,7 +115,7 @@ pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<PathBuf, 
         std::process::exit(0);
     }
 
-    let poise = run_poise(parsed, &mut symbols);
+    let poise = run_poise(parsed, &symbols);
     if args.tacky {
         for item in poise.top_level_items  {
             println!("{:?}", item);
@@ -123,12 +123,10 @@ pub fn run_compiler(input_file: &PathBuf, args: crate::Args) -> Result<PathBuf, 
         std::process::exit(0);
     }
 
-    let asm = run_codegen(poise);
+    let asm = run_codegen(poise, &symbols);
     if args.codegen {
-        for function in asm.functions {
-            for item in function.body {
-                println!("{:?}", item);
-            }
+        for item in asm.top_level {
+            println!("{:?}", item);
         }
         std::process::exit(0);
     }

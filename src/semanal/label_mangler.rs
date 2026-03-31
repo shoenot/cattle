@@ -4,11 +4,14 @@ use super::*;
 
 struct LabelMangler {
     label_map: HashMap<String, (String, bool)>,
+    counter: usize,
 }
 
 impl LabelMangler {
     fn labelgen(&mut self, name: &str) -> String {
-        format!("userlab.{}", name)
+        let lab = format!("userlab.{}_{}", name, self.counter);
+        self.counter += 1;
+        lab
     }
 
     fn check_undeclared_label(&mut self) -> Result<(), SemanticError> {
@@ -22,6 +25,17 @@ impl LabelMangler {
 }
 
 impl Visitor for LabelMangler {
+    fn visit_declaration(&mut self, declaration: &mut Decl) -> Result<(), SemanticError> {
+        if let Decl::FuncDecl(f) = declaration {
+            self.label_map = HashMap::new();
+            self.visit_func_decl(f)?;
+            self.check_undeclared_label()?;
+        } else {
+            walk_declaration(self, declaration)?;
+        }
+        Ok(())
+    }        
+
     fn visit_statement(&mut self, statement: &mut Statement) -> Result<(), SemanticError> {
        match statement {
            Statement::Label(name, st) => {
@@ -61,7 +75,6 @@ impl Visitor for LabelMangler {
 }
 
 pub fn label_mangling_pass(program: &mut Program) -> Result<(), SemanticError> {
-    let mut mangler = LabelMangler { label_map: HashMap::new() };
-    mangler.visit_program(program)?;
-    mangler.check_undeclared_label()
+    let mut mangler = LabelMangler { label_map: HashMap::new(), counter: 0 };
+    mangler.visit_program(program)
 }

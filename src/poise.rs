@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use crate::{parser, semanal::{IdentAttrs, InitialValue, Symbol}};
+use crate::{parser, semanal::{IdentAttrs, InitialValue, SymbolTable}};
 
 #[derive(Debug)]
 pub struct PoiseProg {
@@ -9,10 +7,26 @@ pub struct PoiseProg {
 
 #[derive(Debug)]
 pub enum TopLevelItem {
-    Func {identifier: String, global: bool, params: Vec<String>, body: Vec<PoiseInstruction>},
-    StaticVar {identifier: String, global: bool, init: i32},
+    F(PoiseFunc),
+    V(PoiseStaticVar),
 }
 
+#[derive(Debug)]
+pub struct PoiseFunc {
+    pub identifier: String, 
+    pub global: bool, 
+    pub params: Vec<String>, 
+    pub body: Vec<PoiseInstruction>
+}        
+
+
+#[derive(Debug)]
+pub struct PoiseStaticVar {
+    pub identifier: String, 
+    pub global: bool, 
+    pub init: i32
+}
+        
 #[derive(Debug, Clone)]
 pub enum PoiseInstruction {
     Return(PoiseVal),
@@ -83,16 +97,13 @@ impl TmpCount {
     }
 }
 
-type SymbolTable = HashMap<String, Symbol>;
-
 pub fn gen_poise(tree: &parser::Program, symbols: &SymbolTable) -> PoiseProg {
     let mut count = TmpCount{var_counter: 0, label_counter: 0};
-    let mut instructions = Vec::new();
     let mut top_level_items = Vec::new();
     for decl in &tree.declarations {
         match decl {
             parser::Decl::FuncDecl(f) => if f.body.is_some() {
-                top_level_items.push(gen_poisefunc(f, &mut instructions, &mut count, symbols));
+                top_level_items.push(TopLevelItem::F(gen_poisefunc(f, &mut count, symbols)));
             },
             _ => {},
         }
@@ -101,36 +112,42 @@ pub fn gen_poise(tree: &parser::Program, symbols: &SymbolTable) -> PoiseProg {
     PoiseProg { top_level_items }
 }
 
-fn gen_poisefunc(func: &parser::FuncDeclaration, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount, symbols: &SymbolTable) -> TopLevelItem {
+fn gen_poisefunc(func: &parser::FuncDeclaration, count: &mut TmpCount, symbols: &SymbolTable) -> PoiseFunc {
+    let mut instructions = Vec::new();
     let identifier = func.identifier.clone();
     let params = func.params.clone();
-    gen_inst_block(func.body.as_ref().unwrap(), instructions, count);
+    gen_inst_block(func.body.as_ref().unwrap(), &mut instructions, count, symbols);
     instructions.push(PoiseInstruction::Return(PoiseVal::Constant(0)));
     let mut global = false;
     if let Some(sym) = symbols.get(&identifier) {
         global = sym.attrs.is_global()
     }
-    TopLevelItem::Func { identifier, global, params, body: instructions.to_vec() }
+    PoiseFunc { identifier, global, params, body: instructions.to_vec() }
 }
 
-fn gen_inst_block(block: &parser::Block, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {
+fn gen_inst_block(block: &parser::Block, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount, symbols: &SymbolTable) {
     for blockitem in &block.items {
         match blockitem {
-            parser::BlockItem::S(s) => gen_inst_statement(s, instructions, count),
-            parser::BlockItem::D(parser::Decl::VarDecl(d)) => gen_inst_var_declaration(d, instructions, count),
+            parser::BlockItem::S(s) => gen_inst_statement(s, instructions, count, symbols),
+            parser::BlockItem::D(parser::Decl::VarDecl(d)) => gen_inst_var_declaration(d, instructions, count, symbols),
             parser::BlockItem::D(parser::Decl::FuncDecl(_)) => {},
         }
     }
 }
 
-fn gen_inst_var_declaration(declaration: &parser::VarDeclaration, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {
+fn gen_inst_var_declaration(declaration: &parser::VarDeclaration, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount, symbols: &SymbolTable) {
+    if let Some(sym) = symbols.get(&declaration.identifier) {
+        if matches!(sym.attrs, IdentAttrs::StaticAttr { .. }) {
+            return;
+        }
+    }
     if let Some(exp) = declaration.init.as_ref() {
         let val = emit_expression(exp, instructions, count);
         instructions.push(PoiseInstruction::Copy { src: val, dst: PoiseVal::Variable(declaration.identifier.clone()) });
     }
 }
 
-fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount) {
+fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<PoiseInstruction>, count: &mut TmpCount, symbols: &SymbolTable) {
     match statement {
         parser::Statement::Return(expression) => {
             let val = emit_expression(expression, instructions, count);
@@ -146,12 +163,12 @@ fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<Pois
             let no_label = count.new_label_string();
             instructions.push(PoiseInstruction::Copy { src: eval, dst: cond.clone() });
             instructions.push(PoiseInstruction::JumpIfZero { condition: cond, identifier: no_label.clone() });
-            gen_inst_statement(y, instructions, count);
+            gen_inst_statement(y, instructions, count, symbols);
             if let Some(n) = n {
                 let yes_label = count.new_label_string();
                 instructions.push(PoiseInstruction::Jump(yes_label.clone()));
                 instructions.push(PoiseInstruction::Label(no_label));
-                gen_inst_statement(n, instructions, count);
+                gen_inst_statement(n, instructions, count, symbols);
                 instructions.push(PoiseInstruction::Label(yes_label));
             } else {
                 instructions.push(PoiseInstruction::Label(no_label));
@@ -159,15 +176,15 @@ fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<Pois
         },
         parser::Statement::Label(name, body) => {
             instructions.push(PoiseInstruction::Label(String::from(name)));
-            gen_inst_statement(body, instructions, count);
+            gen_inst_statement(body, instructions, count, symbols);
         },
         parser::Statement::Goto(name) => instructions.push(PoiseInstruction::Jump(name.clone())),
-        parser::Statement::Compound(block) => gen_inst_block(block, instructions, count),
+        parser::Statement::Compound(block) => gen_inst_block(block, instructions, count, symbols),
         parser::Statement::Break(lab) => instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "break"))),
         parser::Statement::Continue(lab) => instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "cont"))),
         parser::Statement::DoWhile { body, cond, lab } => {
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "start")));
-            gen_inst_statement(body, instructions, count);
+            gen_inst_statement(body, instructions, count, symbols);
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
             let res = emit_expression(cond, instructions, count);
             instructions.push(PoiseInstruction::JumpIfNotZero { condition: res, identifier: count.loop_label_string(lab.clone(), "start") });
@@ -178,7 +195,7 @@ fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<Pois
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
             let res = emit_expression(cond, instructions, count);
             instructions.push(PoiseInstruction::JumpIfZero { condition: res, identifier: count.loop_label_string(lab.clone(), "break") });
-            gen_inst_statement(body, instructions, count);
+            gen_inst_statement(body, instructions, count, symbols);
             instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "cont")));
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "break")));
             
@@ -187,14 +204,14 @@ fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<Pois
             if let parser::ForInit::InitExp(Some(exp)) = init {
                 emit_expression(exp, instructions, count);
             } else if let parser::ForInit::InitDec(dec) = init {
-                gen_inst_var_declaration(dec, instructions, count);
+                gen_inst_var_declaration(dec, instructions, count, symbols);
             }
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "start")));
             if let Some(cond) = cond {
                 let res = emit_expression(cond, instructions, count);
                 instructions.push(PoiseInstruction::JumpIfZero { condition: res, identifier: count.loop_label_string(lab.clone(), "break") });
             }
-            gen_inst_statement(body, instructions, count);
+            gen_inst_statement(body, instructions, count, symbols);
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "cont")));
             if let Some(post) = post {
                 emit_expression(post, instructions, count);
@@ -218,7 +235,7 @@ fn gen_inst_statement(statement: &parser::Statement, instructions: &mut Vec<Pois
                 }
             }
             instructions.push(PoiseInstruction::Jump(count.loop_label_string(lab.clone(), "break")));
-            gen_inst_statement(body, instructions, count);
+            gen_inst_statement(body, instructions, count, symbols);
             instructions.push(PoiseInstruction::Label(count.loop_label_string(lab.clone(), "break")));
         },
         parser::Statement::Case { lab,.. } => {
@@ -426,8 +443,8 @@ fn gen_static_symbols(symbols: &SymbolTable) -> Vec<TopLevelItem> {
     for (k, v) in symbols {
         if let IdentAttrs::StaticAttr { init, global } = &v.attrs {
             match init {
-                InitialValue::Initial(v) => defs.push(TopLevelItem::StaticVar { identifier: k.clone(), global:*global, init: *v }),
-                InitialValue::Tentative => defs.push(TopLevelItem::StaticVar { identifier: k.clone(), global:*global, init: 0 }),
+                InitialValue::Initial(v) => defs.push(TopLevelItem::V(PoiseStaticVar { identifier: k.clone(), global:*global, init: *v })),
+                InitialValue::Tentative => defs.push(TopLevelItem::V(PoiseStaticVar { identifier: k.clone(), global:*global, init: 0 })),
                 InitialValue::NoInitializer => {}
             }
         }

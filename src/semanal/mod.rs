@@ -79,6 +79,15 @@ impl fmt::Display for SemanticError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Symbol {
+    pub ident: String,
+    pub datatype: Type,
+    pub attrs: IdentAttrs,
+}
+
+pub type SymbolTable = HashMap<String, Symbol>;
+
 impl std::error::Error for SemanticError {}
 
 pub fn semantic_analysis(program: &mut Program, symbols: &mut HashMap<String, Symbol>) 

@@ -1,4 +1,4 @@
-use crate::{codegen::*, semanal::{IdentAttrs, Symbol, is_extern}};
+use crate::{codegen::*, semanal::{IdentAttrs, Symbol, SymbolTable, is_extern}};
 use std::{collections::HashMap, fmt};
 
 #[derive(Debug)]
@@ -23,21 +23,45 @@ enum CondOp {
     Set,
 }
 
-pub fn emit_program(program: AsmProgram, symbols: &mut HashMap<String, Symbol>)-> Result<String, EmissionError> {
+pub fn emit_program(program: AsmProgram, symbols: &mut SymbolTable)-> Result<String, EmissionError> {
     let mut output = String::new();
-    for function in program.functions {
-        emit_function(function, &mut output, symbols)?;
+    for item in program.top_level {
+        match item {
+            AsmTopLevel::F(f) => emit_function(f, &mut output, symbols)?,
+            AsmTopLevel::V(v) => emit_var(v, &mut output)?,
+        }
     }
     output.push_str("\n.section .note.GNU-stack,\"\",@progbits");
     Ok(output)
 }
 
+fn emit_var(var: AsmStaticVar, output: &mut String) -> Result<(), EmissionError> {
+    if var.global {
+        output.push_str(&format!("\t.globl {}\n", var.name));
+    }
+    if var.init == 0 {
+        output.push_str("\t.bss\n");
+        output.push_str("\t.align 4\n");
+        output.push_str(&format!("{}:\n", var.name));
+        output.push_str("\t.zero 4\n");
+    } else {
+        output.push_str("\t.data\n");
+        output.push_str("\t.align 4\n");
+        output.push_str(&format!("{}:\n", var.name));
+        output.push_str(&format!("\t.long {}\n", var.init));
+    }
+    Ok(())
+}
+
 fn emit_function(function: AsmFunction, output: &mut String, symbols: &mut HashMap<String, Symbol>) -> Result<(), EmissionError> {
-    output.push_str(&format!("\t.globl {}\n", function.name));
+    if function.global {
+        output.push_str(&format!("\t.globl {}\n", function.name));
+    }
+    output.push_str("\t.text\n");
     output.push_str(&format!("{}:\n", function.name));
     output.push_str("\tpushq\t%rbp\n");
     output.push_str("\tmovq\t%rsp,\t%rbp\n");
-    for instruction in function.body {
+    for instruction in function.instructions {
        emit_instruction(instruction, output, symbols)?;
     }
     Ok(())
@@ -154,6 +178,7 @@ fn emit_operand(operand: Operand) -> Result<String, EmissionError> {
             Ok(format!("%{rstr}"))
         },
         Operand::Stack(int) => Ok(format!("{int}(%rbp)")),
+        Operand::Data(ident) => Ok(format!("{ident}(%rip)")),
         Operand::Pseudo(ident) => Err(EmissionError::UnresolvedPseudoRegister(ident)),
     }
 }

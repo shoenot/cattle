@@ -3,20 +3,34 @@ use std::collections::VecDeque;
 
 use stack::*;
 
-use crate::poise::{self, PoiseBinaryOp, PoiseVal, TopLevelItem};
+use crate::{poise::{self, PoiseBinaryOp, PoiseVal, TopLevelItem}, semanal::SymbolTable};
 
 #[derive(Debug)]
 pub struct AsmProgram {
-    pub functions: Vec<AsmFunction>,
+    pub top_level: Vec<AsmTopLevel>,
 }
 
 #[derive(Debug)]
-pub struct AsmFunction {
-    pub name: String,
-    pub body: Vec<AsmInstruction>,
+pub enum AsmTopLevel {
+    F(AsmFunction),
+    V(AsmStaticVar),
+}
+
+#[derive(Debug, Clone)]
+pub struct AsmFunction { 
+    pub name: String, 
+    pub global: bool, 
+    pub instructions: Vec<AsmInstruction>,
 }
 
 #[derive(Debug)]
+pub struct AsmStaticVar {
+    pub name: String, 
+    pub global: bool, 
+    pub init: i32,
+}
+
+#[derive(Debug, Clone)]
 pub enum AsmInstruction {
     Mov(Operand, Operand),
     Movb(Operand, Operand),
@@ -36,13 +50,13 @@ pub enum AsmInstruction {
     Ret,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
     Neg,
     Not,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -60,6 +74,7 @@ pub enum Operand {
     Reg(Register, RegSize),
     Pseudo(String),
     Stack(i32),
+    Data(String),
 }
 
 #[derive(Debug,Clone)]
@@ -82,7 +97,7 @@ pub enum RegSize {
     Quad = 2,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Condition {
     E,
     NE,
@@ -92,16 +107,22 @@ pub enum Condition {
     GE,
 }
 
-pub fn gen_program(tree: poise::PoiseProg) -> AsmProgram {
+pub fn gen_program(tree: poise::PoiseProg, symbols: &SymbolTable) -> AsmProgram {
+    let mut top_level = Vec::new();
     let mut functions = Vec::new();
     for item in tree.top_level_items {
-        if let TopLevelItem::Func { .. } = item {
-            let function = gen_function(item);
-            functions.push(function);
+        match item {
+            TopLevelItem::F(f) => functions.push(gen_function(f)),
+            TopLevelItem::V(v) => top_level.push(gen_static_var(v)),
         }
     }
-    functions = assign_stack_slots(functions);
-    AsmProgram { functions }
+    functions = assign_stack_slots(functions, symbols);
+    top_level.extend(functions.iter().map(|func| AsmTopLevel::F(func.clone())));
+    AsmProgram { top_level }
+}
+
+pub fn gen_static_var(var: poise::PoiseStaticVar) -> AsmTopLevel {
+    AsmTopLevel::V(AsmStaticVar { name: var.identifier, global: var.global, init: var.init })
 }
 
 fn copy_param(num: usize, param: String) -> AsmInstruction {
@@ -119,17 +140,14 @@ fn copy_param(num: usize, param: String) -> AsmInstruction {
     }
 }
 
-fn gen_function(func: poise::TopLevelItem) -> AsmFunction {
+fn gen_function(func: poise::PoiseFunc) -> AsmFunction {
     let mut generated = Vec::new();
-    let mut name = String::new();
-    if let TopLevelItem::Func { identifier, params, body, .. } = func {
-        name = identifier;
-        params.iter()
-            .enumerate()
-            .for_each(|(num , param)| generated.push(copy_param(num, param.into())));
-        gen_instructions(body, &mut generated);
-    }
-    AsmFunction { name, body: generated }
+    let name = func.identifier;
+    func.params.iter()
+        .enumerate()
+        .for_each(|(num , param)| generated.push(copy_param(num, param.into())));
+    gen_instructions(func.body, &mut generated);
+    AsmFunction { name, global: func.global, instructions: generated }
 }
 
 fn gen_instructions(instructions: Vec<poise::PoiseInstruction>, generated: &mut Vec<AsmInstruction>) {
@@ -200,7 +218,7 @@ fn copy_arg(num: usize, arg: poise::PoiseVal, generated: &mut Vec<AsmInstruction
         _ => {
             let operand = gen_operand(arg);
             match operand {
-                Operand::Pseudo(_) | Operand::Stack(_)=> {
+                Operand::Pseudo(_) | Operand::Stack(_) | Operand::Data(_) => {
                     generated.push(AsmInstruction::Mov(operand, Operand::Reg(Register::AX, RegSize::Long)));
                     generated.push(AsmInstruction::Push(Operand::Reg(Register::AX, RegSize::Quad)));
                 }
