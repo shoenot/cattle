@@ -47,7 +47,6 @@ pub enum ForInit {
     InitDec(VarDeclaration),
     InitExp(Option<Expression>),
 }
-
 #[derive(Debug)]
 pub enum Statement {
     Return(Expression),
@@ -121,3 +120,18 @@ pub enum Type {
     FuncType(usize),
 }
 
+pub trait HasStorage {
+    fn storage_class(&self) -> Option<StorageClass>;
+}
+
+impl HasStorage for VarDeclaration {
+    fn storage_class(&self) -> Option<StorageClass> {
+        self.storage.clone()
+    }
+}
+
+impl HasStorage for FuncDeclaration {
+    fn storage_class(&self) -> Option<StorageClass> {
+        self.storage.clone()
+    }
+}

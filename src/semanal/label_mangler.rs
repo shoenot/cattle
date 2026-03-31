@@ -55,7 +55,7 @@ impl Visitor for LabelMangler {
                     Ok(())
                 }
            },
-           _ => self.visit_statement(statement),
+           _ => walk_statement(self, statement),
         }
     }
 }

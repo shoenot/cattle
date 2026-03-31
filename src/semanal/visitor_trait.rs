@@ -110,6 +110,7 @@ pub fn walk_statement<V: Visitor + ?Sized>(v: &mut V, statement: &mut Statement)
                 }
             }
         },
+        Statement::Compound(blk) => v.visit_block(blk)?,
         _ => {}
     }
     Ok(())

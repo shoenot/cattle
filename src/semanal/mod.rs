@@ -39,6 +39,12 @@ pub enum SemanticError {
     FuncCalledWithWrongNumArgs(String),
     VarCalledAsFunc(String),
     FuncUsedAsVar(String),
+    StaticAfterNonStatic(String),
+    NonConstantInitializer(String),
+    ConflictingStorageTypes(String),
+    ConflictingDefinitions(String),
+    LocalStaticVarNonConstantInit(String),
+    InitializerOnLocalExtern(String),
 }
 
 impl fmt::Display for SemanticError {
@@ -61,6 +67,12 @@ impl fmt::Display for SemanticError {
             SemanticError::FuncCalledWithWrongNumArgs(n) => write!(f, "Function {} called with wrong number of args", n),
             SemanticError::VarCalledAsFunc(n) => write!(f, "Variable {} called as a function", n),
             SemanticError::FuncUsedAsVar(n) => write!(f, "Function {} used as a variable", n),
+            SemanticError::StaticAfterNonStatic(n) => write!(f, "Static function declaration {} follows non-static", n),
+            SemanticError::NonConstantInitializer(n) => write!(f, "Non constant initializer {}", n),
+            SemanticError::ConflictingStorageTypes(n) => write!(f, "Conflicting storage types {}", n),
+            SemanticError::ConflictingDefinitions(n) => write!(f, "Conflicting definitions {}", n),
+            SemanticError::LocalStaticVarNonConstantInit(n) => write!(f, "Local static variable with non-constant init {}", n),
+            SemanticError::InitializerOnLocalExtern(n) => write!(f, "Init on local external variable {}", n),
         }
     }
 }

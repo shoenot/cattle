@@ -1,4 +1,4 @@
-use crate::{codegen::*, semanal::Symbol};
+use crate::{codegen::*, semanal::{IdentAttrs, Symbol, is_extern}};
 use std::{collections::HashMap, fmt};
 
 #[derive(Debug)]
@@ -101,8 +101,8 @@ fn emit_instruction(instruction: AsmInstruction, output: &mut String, symbols: &
         AsmInstruction::Call(id) => {
             let mut name = id.clone();
             if let Some(sym) = symbols.get(&id) {
-                if let Some(link) = sym.linkage {
-                    if !link {
+                if let IdentAttrs::FuncAttr { defined:_, global } = sym.attrs {
+                    if !global {
                         name.push_str("@PLT");
                     }
                 }

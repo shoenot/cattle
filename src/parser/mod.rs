@@ -388,7 +388,7 @@ impl Parser {
                 ForInit::InitExp(None)
             },
             _ => {
-                if self.next_token_is_specifier() {
+                if self.next_token_is(TokenType::Int) {
                     let dec = match self.parse_declaration()? {
                         Decl::VarDecl(v) => v,
                         Decl::FuncDecl(_) => return Err(ParseError::ExpectedVarDecl(self.current_span)),

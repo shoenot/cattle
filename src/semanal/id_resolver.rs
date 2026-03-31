@@ -1,5 +1,4 @@
 use std::collections::hash_map::HashMap;
-use crate::parser::*;
 use super::*;
 use visitor_trait::*;
 
@@ -27,15 +26,13 @@ impl IdentResolver {
     fn leave_block(&mut self, outer: usize) {
         self.current_id = outer;
     }
-
-    fn namegen(&mut self, name: &str) -> String {
-        let new = format!("{}.{}", name, self.current_id);
+fn namegen(&mut self, name: &str) -> String { let new = format!("{}.{}", name, self.current_id);
         new
     }
 
-    fn resolve_parameter(&mut self, param: &String, scope: usize) -> Result<String, SemanticError> {
+    fn resolve_parameter(&mut self, param: &String) -> Result<String, SemanticError> {
         if let Some(entry) = self.ident_map.get(param) {
-            if entry.scope == scope {
+            if entry.scope == self.current_id {
                 return Err(SemanticError::DoubleDeclaration(param.into()));
             }
         }
@@ -43,12 +40,11 @@ impl IdentResolver {
         let newname = self.namegen(param);
         self.ident_map.insert(param.to_string(), MapEntry { 
             mapped_name: newname.clone(), 
-            scope, 
+            scope: self.current_id, 
             has_linkage: false, 
         });
         Ok(newname)
     }
-
 }
 
 impl Visitor for IdentResolver {
@@ -68,26 +64,26 @@ impl Visitor for IdentResolver {
             }
             
             if var.storage == Some(StorageClass::Extern) {
+                if var.init.is_some() {
+                    return Err(SemanticError::InitializerOnLocalExtern(var.identifier.clone()));
+                }
                 self.ident_map.insert(var.identifier.clone(), MapEntry { 
                     mapped_name: var.identifier.clone(),
                     scope: self.current_id, 
-                    has_linkage: true 
+                    has_linkage: true,
                 });
             } else {
                 let newname = self.namegen(&var.identifier);
                 self.ident_map.insert(var.identifier.clone(), MapEntry { 
                     mapped_name: newname.clone(),
                     scope: self.current_id, 
-                    has_linkage: true 
+                    has_linkage: false, 
                 });
-                var.identifier = newname.into();
-            }
 
-            match &mut var.init {
-                None => return Ok(()),
-                Some(e) => {
+                if let Some(e) = &mut var.init {
                     self.visit_expression(e)?;
-                },
+                }
+                var.identifier = newname;
             }
         }
         Ok(())
@@ -121,7 +117,7 @@ impl Visitor for IdentResolver {
                 
                 let mut new_params = Vec::new();
                 for param in &param_names {
-                    new_params.push(self.resolve_parameter(param, self.current_id)?);
+                    new_params.push(self.resolve_parameter(param)?);
                 }
                 func.params = new_params;
                 
@@ -188,6 +184,14 @@ impl Visitor for IdentResolver {
                 }
             },
             _ => walk_expression(self, expression)?,
+        }
+        Ok(())
+    }
+
+    fn visit_statement(&mut self, statement: &mut Statement) -> Result<(), SemanticError> {
+        match statement {
+            Statement::Compound(blk) => self.visit_block(blk)?,
+            _ => walk_statement(self, statement)?,
         }
         Ok(())
     }
