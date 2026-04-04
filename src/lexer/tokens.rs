@@ -60,5 +60,9 @@ pub enum TokenType {
     Static,
     Extern,
     Long,
+    Signed,
+    Unsigned,
     LongConstant(String),
+    UnsignedIntConstant(String),
+    UnsignedLongConstant(String),
 }

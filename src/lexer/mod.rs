@@ -1,5 +1,6 @@
 use std::{
     iter::Peekable, vec::IntoIter, fmt,
+    collections::hash_set::HashSet
 };
 pub mod tokens;
 pub use tokens::TokenType;
@@ -7,12 +8,14 @@ pub use tokens::TokenType;
 #[derive(Debug)]
 pub enum LexerError { 
     InvalidCharacter(char, Span),
+    InvalidSuffix(Span),
 }
 
 impl fmt::Display for LexerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             LexerError::InvalidCharacter(c, s) => write!(f, "Lexer Error: invalid character! {}\nLine: {}, Col: {}", c, s.line_number, s.col),
+            LexerError::InvalidSuffix(s) => write!(f, "Lexer Error: invalid constant suffix! \nLine: {}, Col: {}", s.line_number, s.col)
         }
     }
 }
@@ -35,6 +38,20 @@ impl fmt::Display for Span {
 pub struct Token {
     pub token_type: TokenType,
     pub location: Span,
+}
+
+struct SuffixFlags {
+    pub unsigned: bool,
+    pub long: bool,
+}
+
+fn flip_or_err(flag: &mut bool, span: Span) -> Result<(), LexerError> { 
+    if *flag {
+        Err(LexerError::InvalidSuffix(span))
+    } else {
+        *flag = true;
+        Ok(())
+    }
 }
 
 pub struct Tokenizer {
@@ -168,27 +185,30 @@ impl Tokenizer {
             number.push(self.advance());
         }
 
-        let mut parsed = None;
+        let mut suffix_flags = SuffixFlags { long: false, unsigned: false };
 
         if self.peek().is_ascii_alphabetic() {
-            let suffix = self.peek();
-            match suffix {
-                'l' | 'L' => {
-                    self.advance();
-                    parsed = Some(TokenType::LongConstant(number.clone()));
-                },
-                _ => return Err(LexerError::InvalidCharacter(suffix, self.make_span())),
-            }
+            while self.peek().is_ascii_alphabetic() {
+                let suffix = self.peek();
+                match suffix {
+                    'l' | 'L' => {
+                        self.advance();
+                        flip_or_err(&mut suffix_flags.long, self.make_span())?
+                    },
+                    'u' | 'U' => {
+                        self.advance();
+                        flip_or_err(&mut suffix_flags.unsigned, self.make_span())?
+                    },
+                    _ => return Err(LexerError::InvalidCharacter(suffix, self.make_span())),
+                }
+            } 
         }
-        
-        if self.peek().is_ascii_alphabetic() {
-            return Err(LexerError::InvalidCharacter(self.peek(), self.make_span()));
-        }
-        
-        if let Some(token) = parsed {
-            Ok(token)
-        } else {
-            Ok(TokenType::Constant(number))
+            
+        match (suffix_flags.long, suffix_flags.unsigned) {
+            (true, true) => Ok(TokenType::UnsignedLongConstant(number)),
+            (true, false) => Ok(TokenType::LongConstant(number)),
+            (false, true) => Ok(TokenType::UnsignedIntConstant(number)),
+            (false, false) => Ok(TokenType::Constant(number)),
         }
     }
 
@@ -211,6 +231,8 @@ impl Tokenizer {
             "static" => TokenType::Static,
             "extern" => TokenType::Extern,
             "long" => TokenType::Long,
+            "signed" => TokenType::Signed,
+            "unsigned" => TokenType::Unsigned,
             _ => return None,
         };
 

@@ -179,6 +179,8 @@ pub enum ExpressionKind {
 pub enum Const {
     Int(i32),
     Long(i64),
+    UInt(u32),
+    ULong(u64),
 }
 
 impl Deref for Expression {

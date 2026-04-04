@@ -4,7 +4,39 @@ use std::collections::hash_map::HashMap;
 pub enum Type {
     Int,
     Long,
+    UInt,
+    ULong,
     FuncType{params: Vec<Box<Type>>, ret: Box<Type>},
+}
+
+impl Type {
+    fn rank(&self) -> usize {
+        match self {
+            Type::Int => 1,
+            Type::UInt => 2,
+            Type::Long => 3,
+            Type::ULong => 4,
+            Type::FuncType { .. } => unreachable!(),
+        }
+    }
+
+    fn is_signed(&self) -> bool {
+        match self {
+            Type::Int => true,
+            Type::UInt => false,
+            Type::Long => true,
+            Type::ULong => false,
+            Type::FuncType { .. } => unreachable!(),
+        }
+    }
+
+    fn can_represent(&self, t: Type) -> u64 {
+        match self {
+            Type::Int => if t == ,
+            Type::UInt => false,
+            Type::Long => true,
+            Type::ULong => false,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

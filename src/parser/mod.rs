@@ -53,6 +53,23 @@ pub struct Parser {
 struct TypeFlags {
     saw_int: bool,
     saw_long: bool,
+    saw_unsigned: bool,
+    saw_signed: bool,
+}
+
+static SPECIFIERS: &[TokenType] = &[TokenType::Static, TokenType::Extern, TokenType::Int, TokenType::Long,
+                                    TokenType::Unsigned, TokenType::Signed];
+
+static TYPE_SPECIFIERS: &[TokenType] = &[TokenType::Int, TokenType::Long,
+                                         TokenType::Unsigned, TokenType::Signed];
+
+fn flip_or_err(flag: &mut bool, span: Span) -> Result<(), ParseError> { 
+    if *flag {
+        Err(ParseError::InvalidTypes(span))
+    } else {
+        *flag = true;
+        Ok(())
+    }
 }
 
 impl TypeFlags {
@@ -60,26 +77,36 @@ impl TypeFlags {
         TypeFlags { 
             saw_int: false,
             saw_long: false,
+            saw_unsigned: false,
+            saw_signed: false,
         }
     }
 
     fn set_flag(&mut self, dtype: &TokenType, span: &Span) -> Result<(), ParseError> {
         match dtype {
-            TokenType::Int => if self.saw_int != true {self.saw_int = true} else {
-                return Err(ParseError::InvalidTypes(span.clone())) },
-            TokenType::Long => if self.saw_long != true {self.saw_long = true} else {
-                return Err(ParseError::InvalidTypes(span.clone())) },
+            TokenType::Int => flip_or_err(&mut self.saw_int, span.clone())?,
+            TokenType::Long => flip_or_err(&mut self.saw_long, span.clone())?,
+            TokenType::Unsigned => flip_or_err(&mut self.saw_unsigned, span.clone())?,
+            TokenType::Signed => flip_or_err(&mut self.saw_signed, span.clone())?,
             _ => return Err(ParseError::InvalidTypes(span.clone())),
         }
         Ok(())
     }
 
     fn get_type(&self, span: &Span) -> Result<Type, ParseError> {
+        if self.saw_signed && self.saw_unsigned {
+            return Err(ParseError::InvalidTypes(*span));
+        }
         match self {
-            TypeFlags { saw_int:true, saw_long:false } => Ok(Type::Int),
-            TypeFlags { saw_int:false, saw_long:true } => Ok(Type::Long),
-            TypeFlags { saw_int:true, saw_long:true } => Ok(Type::Long),
-            _ => Err(ParseError::InvalidTypes(span.clone())),
+            TypeFlags { saw_int:true, saw_long:false, saw_unsigned: false, .. } => Ok(Type::Int),
+            TypeFlags { saw_int:false, saw_long:true, saw_unsigned: false, .. } => Ok(Type::Long),
+            TypeFlags { saw_int:true, saw_long:true, saw_unsigned: false, .. } => Ok(Type::Long),
+            TypeFlags { saw_int:true, saw_long:false, saw_unsigned: true, .. } => Ok(Type::UInt),
+            TypeFlags { saw_int:false, saw_long:true, saw_unsigned: true, .. } => Ok(Type::ULong),
+            TypeFlags { saw_int:true, saw_long:true, saw_unsigned: true, .. } => Ok(Type::ULong),
+            TypeFlags { saw_int:false, saw_long:false, saw_unsigned: true, .. } => Ok(Type::UInt),
+            TypeFlags { saw_int:false, saw_long:false, saw_unsigned: false, saw_signed: true } => Ok(Type::Int),
+            TypeFlags { saw_int:false, saw_long:false, saw_unsigned: false, .. } => Err(ParseError::InvalidTypes(span.clone())),
         }
     }
 }
@@ -133,14 +160,13 @@ impl Parser {
 
     fn next_token_is_specifier(&mut self) -> bool {
         self.peek().map_or(false, |token| {
-            matches!(token.token_type, TokenType::Int | TokenType::Static |
-                TokenType::Extern | TokenType::Long)
+            SPECIFIERS.contains(&token.token_type)
         })
     }
 
     fn next_token_is_type(&mut self) -> bool {
         self.peek().map_or(false, |token| {
-            matches!(token.token_type, TokenType::Int | TokenType::Long)
+            TYPE_SPECIFIERS.contains(&token.token_type)
         })
     }
 
@@ -208,7 +234,7 @@ impl Parser {
             } else {
                 let token = self.advance()?.token_type;
                 match token {
-                    TokenType::Int | TokenType::Long => types.push(token),
+                    tk if TYPE_SPECIFIERS.contains(&token) => types.push(tk),
                     TokenType::Static => { 
                         if storage.is_none() { storage = Some(StorageClass::Static) } else 
                         { return Err(ParseError::InvalidStorageClasses(self.current_span)) }
@@ -244,9 +270,9 @@ impl Parser {
         while !matches!(self.next_token_type()?, TokenType::Identifier(_)) {
             let next = self.next_token_type()?;
             match next {
-                TokenType::Int | TokenType::Long => {
+                tk if TYPE_SPECIFIERS.contains(&next) => {
                     self.advance()?;
-                    types.push(next);
+                    types.push(tk);
                 },
                 _ => return Err(ParseError::InvalidTypes(self.current_span)),
             }
@@ -328,7 +354,8 @@ impl Parser {
     //////////////////
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
-        let statement = match self.next_token_type()? {
+        let next = self.next_token_type()?;
+        let statement = match next {
             TokenType::Semicolon => { 
                 let ret = StatementKind::Null;
                 self.expect(TokenType::Semicolon)?;
@@ -447,7 +474,9 @@ impl Parser {
                 self.expect(TokenType::Colon)?;
                 self.new_stmt(StatementKind::Default{lab:"".into()})
             },
-            TokenType::Int => return Err(ParseError::ExpectedStatement(self.current_span)),
+            _ if TYPE_SPECIFIERS.contains(&next) => {
+                return Err(ParseError::ExpectedStatement(self.current_span))
+            },
             _ => {
                 let ret = StatementKind::Expression(self.parse_expression(0)?);
                 self.expect(TokenType::Semicolon)?;
@@ -466,7 +495,7 @@ impl Parser {
                 ForInit::InitExp(None)
             },
             _ => {
-                if self.next_token_is(TokenType::Int) | self.next_token_is(TokenType::Long) {
+                if TYPE_SPECIFIERS.contains(&self.next_token_type()?) {
                     let dec = match self.parse_declaration()? {
                         Decl::VarDecl(v) => v,
                         Decl::FuncDecl(_) => return Err(ParseError::ExpectedVarDecl(self.current_span)),
@@ -544,12 +573,24 @@ impl Parser {
     }
 
     fn parse_const(&self, number: String) -> Result<Const, ParseError> {
-        let v = number.parse::<i64>().map_err(|_| ParseError::IntegerOverflow(self.current_span))?;
-
-        if v <= 2_i64.pow(31) - 1 {
+        let v = number.parse::<u64>().map_err(|_| ParseError::IntegerOverflow(self.current_span))?;
+        if v <= i32::MAX as u64 {
             Ok(Const::Int(v as i32))
+        } else if v <= i64::MAX as u64 {
+            Ok(Const::Long(v as i64))
         } else {
-            Ok(Const::Long(v))
+            Err(ParseError::IntegerOverflow(self.current_span))
+        }
+    }
+
+    fn parse_unsigned_const(&self, number: String) -> Result<Const, ParseError> {
+        let v = number.parse::<u64>().map_err(|_| ParseError::IntegerOverflow(self.current_span))?;
+        if v <= u32::MAX as u64 {
+            Ok(Const::UInt(v as u32))
+        } else if v <= u64::MAX as u64 {
+            Ok(Const::ULong(v))
+        } else {
+            Err(ParseError::IntegerOverflow(self.current_span))
         }
     }
 
@@ -563,6 +604,11 @@ impl Parser {
             TokenType::LongConstant(value) => {
                 let v = value.parse::<i64>().map_err(|_| ParseError::IntegerOverflow(self.current_span))?;
                 self.new_expr(ExpressionKind::Constant(Const::Long(v)))
+            },
+            TokenType::UnsignedIntConstant(value) => self.new_expr(ExpressionKind::Constant(self.parse_unsigned_const(value)?)),
+            TokenType::UnsignedLongConstant(value) => {
+                let v = value.parse::<u64>().map_err(|_| ParseError::IntegerOverflow(self.current_span))?;
+                self.new_expr(ExpressionKind::Constant(Const::ULong(v)))
             },
             TokenType::OpenParen => {
                 if self.next_token_is_type() {

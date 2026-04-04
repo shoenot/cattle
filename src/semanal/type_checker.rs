@@ -28,12 +28,22 @@ fn set_type(expr: &mut Expression, expression_type: Type) -> Type {
     expression_type
 }
 
-fn get_common_type(type1: Type, type2: Type) -> Type {
-    if type1 == type2 {
-        type1
-    } else {
-        Type::Long
+fn get_s_u_type(ut: Type, st: Type) -> Type {
+    if 
+}
+
+fn get_common_type(t1: Type, t2: Type) -> Type {
+    if t1 == t2 {
+        t1
+    } else if (t1.is_signed() == t2.is_signed()) {
+        if t1 > t2 { t1 } else { t2 }
+    } else if (t1.is_signed() != t2.is_signed()) {
+        let (ut, st) = if t1.is_signed() { (t2, t1) } else { (t1, t2) };
+        if ut.rank() >= st.rank() {
+            ut
+        } else 
     }
+        
 }
 
 fn convert_type(expr: &mut Expression, datatype: Type) {
